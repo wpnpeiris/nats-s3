@@ -31,6 +31,7 @@ func NewClient(kind string) *Client {
 func (c *Client) SetupConnectionToNATS(servers string, options ...nats.Option) error {
 
 	options = append(options, nats.Name(c.Name()))
+	// options = append(options, nats.UserInfo("user1", "password1"))
 
 	c.cmu.Lock()
 	defer c.cmu.Unlock()
