@@ -4,8 +4,10 @@ import (
 	"log"
 
 	"github.com/gorilla/mux"
+
 	s3api "github.com/seaweedfs/seaweedfs/weed/s3api"
 	s3cont "github.com/seaweedfs/seaweedfs/weed/s3api/s3_constants"
+
 	"github.com/wpnpeiris/nats-gateway/internal/client"
 )
 
