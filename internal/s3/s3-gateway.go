@@ -4,6 +4,7 @@ import (
 	"log"
 
 	"github.com/gorilla/mux"
+	"github.com/nats-io/nats.go"
 
 	s3api "github.com/seaweedfs/seaweedfs/weed/s3api"
 	s3cont "github.com/seaweedfs/seaweedfs/weed/s3api/s3_constants"
@@ -16,10 +17,10 @@ type S3Gateway struct {
 	*client.Client
 }
 
-func NewS3Gateway(natsServers string) (s3Gateway *S3Gateway) {
+func NewS3Gateway(natsServers string, options []nats.Option) (s3Gateway *S3Gateway) {
 	comp := client.NewClient("s3-gateway")
 
-	err := comp.SetupConnectionToNATS(natsServers)
+	err := comp.SetupConnectionToNATS(natsServers, options...)
 	if err != nil {
 		log.Fatal(err)
 	}
