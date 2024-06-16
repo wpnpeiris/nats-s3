@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
+	"github.com/nats-io/nats.go"
 	"github.com/wpnpeiris/nats-gateway/internal/s3"
 )
 
@@ -13,8 +14,8 @@ type GatewayServer struct {
 	s3Gateway *s3.S3Gateway
 }
 
-func NewGatewayServer(natsServers string) (gatewayServer *GatewayServer) {
-	s3Gateway := s3.NewS3Gateway(natsServers)
+func NewGatewayServer(natsServers string, options []nats.Option) (gatewayServer *GatewayServer) {
+	s3Gateway := s3.NewS3Gateway(natsServers, options)
 	return &GatewayServer{s3Gateway}
 }
 
