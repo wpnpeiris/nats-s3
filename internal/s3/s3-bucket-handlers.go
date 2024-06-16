@@ -19,7 +19,12 @@ type BucketsResult struct {
 func (s3Gateway *S3Gateway) ListBuckets(w http.ResponseWriter, r *http.Request) {
 	nc := s3Gateway.NATS()
 
-	js, _ := nc.JetStream()
+	js, err := nc.JetStream()
+	if err != nil {
+		handleJetStreamError(err, w)
+		return
+	}
+
 	entries := js.ObjectStores()
 
 	var buckets []*s3Api.Bucket

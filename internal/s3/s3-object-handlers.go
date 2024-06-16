@@ -37,10 +37,25 @@ func (s3Gateway *S3Gateway) ListObjects(w http.ResponseWriter, r *http.Request) 
 	fmt.Println("List Objects in bucket", bucket)
 
 	nc := s3Gateway.NATS()
-	js, _ := nc.JetStream()
-	os, _ := js.ObjectStore(bucket)
+	js, err := nc.JetStream()
+	if err != nil {
+		handleJetStreamError(err, w)
+		return
+	}
+
+	os, err := js.ObjectStore(bucket)
+	if err != nil {
+		handleObjectStoreError(err, w)
+		return
+	}
 
 	res, err := os.List()
+	if err != nil {
+		fmt.Printf("Error at Listing bucket, %s", err)
+		http.Error(w, "Bucket not found in the ObjectStore", http.StatusNotFound)
+		return
+	}
+
 	var contents []s3Api.Object
 	for _, obj := range res {
 		contents = append(contents, s3Api.Object{
@@ -50,10 +65,6 @@ func (s3Gateway *S3Gateway) ListObjects(w http.ResponseWriter, r *http.Request) 
 			Size:         aws.Int64(int64(obj.Size)),
 			StorageClass: aws.String(""),
 		})
-	}
-	if err != nil {
-		http.Error(w, "Unexpected", http.StatusInternalServerError)
-		return
 	}
 
 	xmlResponse := ListBucketResult{
@@ -73,9 +84,18 @@ func (s3Gateway *S3Gateway) Download(w http.ResponseWriter, r *http.Request) {
 
 	nc := s3Gateway.NATS()
 
-	js, _ := nc.JetStream()
+	js, err := nc.JetStream()
+	if err != nil {
+		handleJetStreamError(err, w)
+		return
+	}
 
-	os, _ := js.ObjectStore(bucket)
+	os, err := js.ObjectStore(bucket)
+	if err != nil {
+		handleObjectStoreError(err, w)
+		return
+	}
+
 	res, err := os.GetBytes(key)
 	if err != nil {
 		http.Error(w, "Unexpected", http.StatusInternalServerError)
@@ -91,12 +111,22 @@ func (s3Gateway *S3Gateway) HeadObject(w http.ResponseWriter, r *http.Request) {
 
 	nc := s3Gateway.NATS()
 
-	js, _ := nc.JetStream()
+	js, err := nc.JetStream()
+	if err != nil {
+		handleJetStreamError(err, w)
+		return
+	}
 
-	os, _ := js.ObjectStore(bucket)
+	os, err := js.ObjectStore(bucket)
+	if err != nil {
+		handleObjectStoreError(err, w)
+		return
+	}
+
 	res, err := os.GetInfo(key)
 	if err != nil {
-		http.Error(w, "Unexpected", http.StatusInternalServerError)
+		fmt.Printf("Error at  listing object info, %s", err)
+		http.Error(w, "Object not found in the bucket", http.StatusNotFound)
 		return
 	}
 
@@ -117,8 +147,17 @@ func (s3Gateway *S3Gateway) Upload(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("Upload to", bucket, "with key", key)
 
 	nc := s3Gateway.NATS()
-	js, _ := nc.JetStream()
-	os, _ := js.ObjectStore(bucket)
+	js, err := nc.JetStream()
+	if err != nil {
+		handleJetStreamError(err, w)
+		return
+	}
+
+	os, err := js.ObjectStore(bucket)
+	if err != nil {
+		handleObjectStoreError(err, w)
+		return
+	}
 
 	res, err := os.PutBytes(key, body)
 	if err != nil {
