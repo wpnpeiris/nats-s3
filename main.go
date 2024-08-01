@@ -4,10 +4,9 @@ import (
 	"flag"
 	"fmt"
 	"log"
-	"runtime"
 
 	"github.com/nats-io/nats.go"
-	"github.com/wpnpeiris/nats-gateway/cmd"
+	"github.com/wpnpeiris/nats-s3/internal/server"
 )
 
 func main() {
@@ -18,7 +17,7 @@ func main() {
 		natsPassword string
 	)
 	flag.Usage = func() {
-		fmt.Printf("Usage: nats-gateway [options...]\n\n")
+		fmt.Printf("Usage: nats-s3 [options...]\n\n")
 		flag.PrintDefaults()
 	}
 
@@ -28,19 +27,16 @@ func main() {
 	flag.StringVar(&natsPassword, "natsPassword", "", "Nats server password")
 	flag.Parse()
 
-	log.Printf("Starting NATS Gateway...")
+	log.Printf("Starting NATS S3 server...")
 
 	var natsOptions []nats.Option
 	if natsUser != "" && natsPassword != "" {
 		natsOptions = append(natsOptions, nats.UserInfo(natsUser, natsPassword))
 	}
 
-	gateway := cmd.NewGatewayServer(natsServers, natsOptions)
+	gateway := server.NewGatewayServer(natsServers, natsOptions)
 	err := gateway.ListenAndServe(serverListen)
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	log.Printf("Listening for HTTP requests on %v", serverListen)
-	runtime.Goexit()
 }

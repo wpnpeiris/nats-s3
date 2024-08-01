@@ -1,13 +1,13 @@
-package cmd
+package server
 
 import (
-	"net"
+	"log"
 	"net/http"
 	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/nats-io/nats.go"
-	"github.com/wpnpeiris/nats-gateway/internal/s3"
+	"github.com/wpnpeiris/nats-s3/internal/s3"
 )
 
 type GatewayServer struct {
@@ -24,10 +24,6 @@ func (server *GatewayServer) ListenAndServe(endpoint string) error {
 
 	server.s3Gateway.RegisterS3Routes(router)
 
-	l, err := net.Listen("tcp", endpoint)
-	if err != nil {
-		return err
-	}
 	srv := &http.Server{
 		Addr:           endpoint,
 		Handler:        router,
@@ -36,7 +32,6 @@ func (server *GatewayServer) ListenAndServe(endpoint string) error {
 		MaxHeaderBytes: 1 << 20,
 	}
 
-	go srv.Serve(l)
-
-	return nil
+	log.Printf("Listening for HTTP requests on %v", endpoint)
+	return srv.ListenAndServe()
 }
