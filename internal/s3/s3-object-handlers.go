@@ -75,7 +75,12 @@ func (s3Gateway *S3Gateway) ListObjects(w http.ResponseWriter, r *http.Request) 
 		MaxKeys:     0,
 	}
 
-	xml.NewEncoder(w).Encode(xmlResponse)
+	err = xml.NewEncoder(w).Encode(xmlResponse)
+	if err != nil {
+		fmt.Printf("Error enconding the response, %s", err)
+		http.Error(w, "Unexpected", http.StatusInternalServerError)
+		return
+	}
 }
 
 func (s3Gateway *S3Gateway) Download(w http.ResponseWriter, r *http.Request) {
@@ -102,7 +107,12 @@ func (s3Gateway *S3Gateway) Download(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Write(res)
+	_, err = w.Write(res)
+	if err != nil {
+		fmt.Printf("Error writing the response, %s", err)
+		http.Error(w, "Unexpected", http.StatusInternalServerError)
+		return
+	}
 }
 
 func (s3Gateway *S3Gateway) HeadObject(w http.ResponseWriter, r *http.Request) {
@@ -174,5 +184,10 @@ func (s3Gateway *S3Gateway) Upload(w http.ResponseWriter, r *http.Request) {
 		ChecksumSHA256: "string",
 	}
 
-	xml.NewEncoder(w).Encode(xmlResponse)
+	err = xml.NewEncoder(w).Encode(xmlResponse)
+	if err != nil {
+		fmt.Printf("Error enconding the response, %s", err)
+		http.Error(w, "Unexpected", http.StatusInternalServerError)
+		return
+	}
 }

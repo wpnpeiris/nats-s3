@@ -9,7 +9,7 @@ import (
 	s3api "github.com/seaweedfs/seaweedfs/weed/s3api"
 	s3cont "github.com/seaweedfs/seaweedfs/weed/s3api/s3_constants"
 
-	"github.com/wpnpeiris/nats-gateway/internal/client"
+	"github.com/wpnpeiris/nats-s3/internal/client"
 )
 
 // Provide S3 API implementation
@@ -18,15 +18,15 @@ type S3Gateway struct {
 }
 
 func NewS3Gateway(natsServers string, options []nats.Option) (s3Gateway *S3Gateway) {
-	comp := client.NewClient("s3-gateway")
+	client := client.NewClient("s3-gateway")
 
-	err := comp.SetupConnectionToNATS(natsServers, options...)
+	err := client.SetupConnectionToNATS(natsServers, options...)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	return &S3Gateway{
-		comp,
+		client,
 	}
 }
 

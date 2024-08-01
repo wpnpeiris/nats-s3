@@ -40,22 +40,18 @@ func WriteXMLResponse(w http.ResponseWriter, r *http.Request, statusCode int, re
 
 func WriteEmptyResponse(w http.ResponseWriter, r *http.Request, statusCode int) {
 	WriteResponse(w, r, statusCode, []byte{}, mimeNone)
-	// PostLog(r, statusCode, ErrNone)
 }
 
 func WriteErrorResponse(w http.ResponseWriter, r *http.Request, errorCode ErrorCode) {
 	vars := mux.Vars(r)
 	bucket := vars["bucket"]
 	object := vars["object"]
-	if strings.HasPrefix(object, "/") {
-		object = object[1:]
-	}
+	object = strings.TrimPrefix(object, "/")
 
 	apiError := GetAPIError(errorCode)
 	errorResponse := getRESTErrorResponse(apiError, r.URL.Path, bucket, object)
 	encodedErrorResponse := EncodeXMLResponse(errorResponse)
 	WriteResponse(w, r, apiError.HTTPStatusCode, encodedErrorResponse, MimeXML)
-	// PostLog(r, apiError.HTTPStatusCode, errorCode)
 }
 
 func getRESTErrorResponse(err APIError, resource string, bucket, object string) RESTErrorResponse {
@@ -73,8 +69,11 @@ func getRESTErrorResponse(err APIError, resource string, bucket, object string) 
 func EncodeXMLResponse(response interface{}) []byte {
 	var bytesBuffer bytes.Buffer
 	bytesBuffer.WriteString(xml.Header)
-	e := xml.NewEncoder(&bytesBuffer)
-	e.Encode(response)
+	encoder := xml.NewEncoder(&bytesBuffer)
+	err := encoder.Encode(response)
+	if err != nil {
+		fmt.Printf("Error enconding the response, %s", err)
+	}
 	return bytesBuffer.Bytes()
 }
 
@@ -97,17 +96,15 @@ func WriteResponse(w http.ResponseWriter, r *http.Request, statusCode int, respo
 	}
 	w.WriteHeader(statusCode)
 	if response != nil {
-		// glog.V(4).Infof("status %d %s: %s", statusCode, mType, string(response))
+		fmt.Printf("status %d %s: %s", statusCode, mType, string(response))
 		_, err := w.Write(response)
 		if err != nil {
-			// glog.V(0).Infof("write err: %v", err)
+			fmt.Printf("Error writing the response, %s", err)
 		}
 		w.(http.Flusher).Flush()
 	}
 }
 
-// If none of the http routes match respond with MethodNotAllowed
 func NotFoundHandler(w http.ResponseWriter, r *http.Request) {
-	// glog.V(0).Infof("unsupported %s %s", r.Method, r.RequestURI)
 	WriteErrorResponse(w, r, ErrMethodNotAllowed)
 }
