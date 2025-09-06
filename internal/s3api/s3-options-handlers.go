@@ -1,6 +1,8 @@
-package s3
+package s3api
 
-import "net/http"
+import (
+	"net/http"
+)
 
 func (s3Gateway *S3Gateway) SetOptionHeaders(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")

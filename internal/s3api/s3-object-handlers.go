@@ -1,4 +1,4 @@
-package s3
+package s3api
 
 import (
 	"encoding/xml"
@@ -10,15 +10,15 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/gorilla/mux"
 
-	s3Api "github.com/aws/aws-sdk-go/service/s3"
+	"github.com/aws/aws-sdk-go/service/s3"
 )
 
 type ListBucketResult struct {
-	IsTruncated bool           `xml:"IsTruncated"`
-	Contents    []s3Api.Object `xml:"Contents"`
-	Name        string         `xml:"Name"`
-	Prefix      string         `xml:"Prefix"`
-	MaxKeys     int            `xml:"MaxKeys"`
+	IsTruncated bool        `xml:"IsTruncated"`
+	Contents    []s3.Object `xml:"Contents"`
+	Name        string      `xml:"Name"`
+	Prefix      string      `xml:"Prefix"`
+	MaxKeys     int         `xml:"MaxKeys"`
 }
 
 // CopyObjectResult upload object result
@@ -56,9 +56,9 @@ func (s3Gateway *S3Gateway) ListObjects(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	var contents []s3Api.Object
+	var contents []s3.Object
 	for _, obj := range res {
-		contents = append(contents, s3Api.Object{
+		contents = append(contents, s3.Object{
 			ETag:         aws.String(""),
 			Key:          aws.String(obj.Name),
 			LastModified: aws.Time(obj.ModTime),
@@ -70,7 +70,7 @@ func (s3Gateway *S3Gateway) ListObjects(w http.ResponseWriter, r *http.Request) 
 	xmlResponse := ListBucketResult{
 		IsTruncated: false,
 		Contents:    contents,
-		Name:        "Filename",
+		Name:        bucket,
 		Prefix:      "",
 		MaxKeys:     0,
 	}
@@ -107,6 +107,8 @@ func (s3Gateway *S3Gateway) Download(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(res)))
+	w.Header().Set("Content-Type", "application/octet-stream")
 	_, err = w.Write(res)
 	if err != nil {
 		fmt.Printf("Error writing the response, %s", err)
@@ -142,7 +144,10 @@ func (s3Gateway *S3Gateway) HeadObject(w http.ResponseWriter, r *http.Request) {
 
 	fmt.Printf("Head object %s/%s\n", bucket, key)
 	w.Header().Set("Last-Modified", res.ModTime.Format(time.RFC3339))
-	w.Header().Set("Content-Length", "1024")
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", res.Size))
+	if res.Digest != "" {
+		w.Header().Set("ETag", fmt.Sprintf("\"%s\"", res.Digest))
+	}
 }
 
 func (s3Gateway *S3Gateway) Upload(w http.ResponseWriter, r *http.Request) {
@@ -176,7 +181,7 @@ func (s3Gateway *S3Gateway) Upload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	xmlResponse := CopyObjectResult{
-		ETag:           res.Name,
+		ETag:           fmt.Sprintf("\"%s\"", res.Digest),
 		LastModified:   time.Now(),
 		ChecksumCRC32:  "string",
 		ChecksumCRC32C: "string",
@@ -190,4 +195,30 @@ func (s3Gateway *S3Gateway) Upload(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Unexpected", http.StatusInternalServerError)
 		return
 	}
+}
+
+func (s3Gateway *S3Gateway) DeleteObject(w http.ResponseWriter, r *http.Request) {
+	bucket := mux.Vars(r)["bucket"]
+	key := mux.Vars(r)["key"]
+
+	nc := s3Gateway.NATS()
+	js, err := nc.JetStream()
+	if err != nil {
+		handleJetStreamError(err, w)
+		return
+	}
+
+	os, err := js.ObjectStore(bucket)
+	if err != nil {
+		handleObjectStoreError(err, w)
+		return
+	}
+
+	err = os.Delete(key)
+	if err != nil {
+		http.Error(w, "Unexpected", http.StatusInternalServerError)
+		return
+	}
+
+	WriteEmptyResponse(w, r, http.StatusNoContent)
 }
