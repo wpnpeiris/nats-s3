@@ -6,18 +6,14 @@ import (
 	"sync"
 
 	"github.com/nats-io/nats.go"
-
 	"github.com/nats-io/nuid"
 )
 
 type Client struct {
-	cmu sync.Mutex
-
-	id string
-
-	nc *nats.Conn
-
+	cmu  sync.Mutex
+	id   string
 	kind string
+	nc   *nats.Conn
 }
 
 func NewClient(kind string) *Client {

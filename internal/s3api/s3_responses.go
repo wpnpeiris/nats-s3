@@ -2,7 +2,7 @@
  * The following code is mostly copied from seaweedfs implementation.
  */
 
-package s3
+package s3api
 
 import (
 	"bytes"
@@ -10,11 +10,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
-
-	"github.com/aws/aws-sdk-go/private/protocol/xml/xmlutil"
-	"github.com/gorilla/mux"
 )
 
 type mimeType string
@@ -24,48 +20,18 @@ const (
 	MimeXML  mimeType = "application/xml"
 )
 
-func WriteAwsXMLResponse(w http.ResponseWriter, r *http.Request, statusCode int, result interface{}) {
-	var bytesBuffer bytes.Buffer
-	err := xmlutil.BuildXML(result, xml.NewEncoder(&bytesBuffer))
-	if err != nil {
-		WriteErrorResponse(w, r, ErrInternalError)
-		return
-	}
-	WriteResponse(w, r, statusCode, bytesBuffer.Bytes(), MimeXML)
-}
-
+// WriteXMLResponse encodes the response as XML and writes it with the given
+// HTTP status code and appropriate Content-Type.
 func WriteXMLResponse(w http.ResponseWriter, r *http.Request, statusCode int, response interface{}) {
 	WriteResponse(w, r, statusCode, EncodeXMLResponse(response), MimeXML)
 }
 
+// WriteEmptyResponse writes only headers and the given status code.
 func WriteEmptyResponse(w http.ResponseWriter, r *http.Request, statusCode int) {
 	WriteResponse(w, r, statusCode, []byte{}, mimeNone)
 }
 
-func WriteErrorResponse(w http.ResponseWriter, r *http.Request, errorCode ErrorCode) {
-	vars := mux.Vars(r)
-	bucket := vars["bucket"]
-	object := vars["object"]
-	object = strings.TrimPrefix(object, "/")
-
-	apiError := GetAPIError(errorCode)
-	errorResponse := getRESTErrorResponse(apiError, r.URL.Path, bucket, object)
-	encodedErrorResponse := EncodeXMLResponse(errorResponse)
-	WriteResponse(w, r, apiError.HTTPStatusCode, encodedErrorResponse, MimeXML)
-}
-
-func getRESTErrorResponse(err APIError, resource string, bucket, object string) RESTErrorResponse {
-	return RESTErrorResponse{
-		Code:       err.Code,
-		BucketName: bucket,
-		Key:        object,
-		Message:    err.Description,
-		Resource:   resource,
-		RequestID:  fmt.Sprintf("%d", time.Now().UnixNano()),
-	}
-}
-
-// Encodes the response headers into XML format.
+// EncodeXMLResponse serializes a value into an XML byte slice with xml.Header.
 func EncodeXMLResponse(response interface{}) []byte {
 	var bytesBuffer bytes.Buffer
 	bytesBuffer.WriteString(xml.Header)
@@ -77,6 +43,9 @@ func EncodeXMLResponse(response interface{}) []byte {
 	return bytesBuffer.Bytes()
 }
 
+// setCommonHeaders sets shared S3-style headers, including a generated
+// x-amz-request-id and Accept-Ranges. Also configures permissive CORS if
+// the request includes an Origin header.
 func setCommonHeaders(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("x-amz-request-id", fmt.Sprintf("%d", time.Now().UnixNano()))
 	w.Header().Set("Accept-Ranges", "bytes")
@@ -86,6 +55,8 @@ func setCommonHeaders(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// WriteResponse writes headers, status code, and optional body, flushing the
+// response when done. Body logging is minimized to avoid leaking data.
 func WriteResponse(w http.ResponseWriter, r *http.Request, statusCode int, response []byte, mType mimeType) {
 	setCommonHeaders(w, r)
 	if response != nil {
@@ -96,15 +67,11 @@ func WriteResponse(w http.ResponseWriter, r *http.Request, statusCode int, respo
 	}
 	w.WriteHeader(statusCode)
 	if response != nil {
-		fmt.Printf("status %d %s: %s", statusCode, mType, string(response))
+		fmt.Printf("status %d %s len=%d\n", statusCode, mType, len(response))
 		_, err := w.Write(response)
 		if err != nil {
 			fmt.Printf("Error writing the response, %s", err)
 		}
 		w.(http.Flusher).Flush()
 	}
-}
-
-func NotFoundHandler(w http.ResponseWriter, r *http.Request) {
-	WriteErrorResponse(w, r, ErrMethodNotAllowed)
 }

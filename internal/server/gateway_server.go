@@ -7,22 +7,22 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/nats-io/nats.go"
-	"github.com/wpnpeiris/nats-s3/internal/s3"
+	"github.com/wpnpeiris/nats-s3/internal/s3api"
 )
 
 type GatewayServer struct {
-	s3Gateway *s3.S3Gateway
+	s3Gateway *s3api.S3Gateway
 }
 
 func NewGatewayServer(natsServers string, options []nats.Option) (gatewayServer *GatewayServer) {
-	s3Gateway := s3.NewS3Gateway(natsServers, options)
+	s3Gateway := s3api.NewS3Gateway(natsServers, options)
 	return &GatewayServer{s3Gateway}
 }
 
 func (server *GatewayServer) ListenAndServe(endpoint string) error {
 	router := mux.NewRouter()
 
-	server.s3Gateway.RegisterS3Routes(router)
+	server.s3Gateway.RegisterRoutes(router)
 
 	srv := &http.Server{
 		Addr:           endpoint,
