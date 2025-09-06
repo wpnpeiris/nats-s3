@@ -16,8 +16,8 @@ type BucketsResult struct {
 	Buckets []*s3.Bucket `xml:"Buckets>Bucket"`
 }
 
-func (s3Gateway *S3Gateway) ListBuckets(w http.ResponseWriter, r *http.Request) {
-	nc := s3Gateway.NATS()
+func (s *S3Gateway) ListBuckets(w http.ResponseWriter, r *http.Request) {
+	nc := s.NATS()
 
 	js, err := nc.JetStream()
 	if err != nil {

@@ -11,13 +11,10 @@ import (
 )
 
 type Client struct {
-	cmu sync.Mutex
-
-	id string
-
-	nc *nats.Conn
-
+	cmu  sync.Mutex
+	id   string
 	kind string
+	nc   *nats.Conn
 }
 
 func NewClient(kind string) *Client {
