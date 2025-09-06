@@ -12,7 +12,7 @@ import (
 // implemented operations to NATS JetStream-backed object storage.
 // Unimplemented endpoints intentionally respond with HTTP 501 Not Implemented.
 type S3Gateway struct {
-	*client.Client
+	client *client.NatsObjectClient
 }
 
 // NewS3Gateway creates a gateway instance and establishes a connection to
@@ -24,7 +24,9 @@ func NewS3Gateway(natsServers string, options []nats.Option) *S3Gateway {
 		panic("Failed to connect to NATS")
 	}
 	return &S3Gateway{
-		Client: natsClient,
+		client: &client.NatsObjectClient{
+			Client: natsClient,
+		},
 	}
 }
 

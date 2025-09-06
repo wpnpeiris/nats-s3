@@ -38,20 +38,7 @@ func (s *S3Gateway) ListObjects(w http.ResponseWriter, r *http.Request) {
 
 	fmt.Println("List Objects in bucket", bucket)
 
-	nc := s.NATS()
-	js, err := nc.JetStream()
-	if err != nil {
-		handleJetStreamError(err, w)
-		return
-	}
-
-	os, err := js.ObjectStore(bucket)
-	if err != nil {
-		handleObjectStoreError(err, w)
-		return
-	}
-
-	res, err := os.List()
+	res, err := s.client.ListObjects(bucket)
 	if err != nil {
 		fmt.Printf("Error at Listing bucket, %s", err)
 		http.Error(w, "Bucket not found in the ObjectStore", http.StatusNotFound)
@@ -95,22 +82,7 @@ func (s *S3Gateway) Download(w http.ResponseWriter, r *http.Request) {
 	bucket := mux.Vars(r)["bucket"]
 	key := mux.Vars(r)["key"]
 
-	nc := s.NATS()
-
-	js, err := nc.JetStream()
-	if err != nil {
-		handleJetStreamError(err, w)
-		return
-	}
-
-	os, err := js.ObjectStore(bucket)
-	if err != nil {
-		handleObjectStoreError(err, w)
-		return
-	}
-
-	info, _ := os.GetInfo(key)
-	res, err := os.GetBytes(key)
+	info, data, err := s.client.GetObject(bucket, key)
 	if err != nil {
 		http.Error(w, "Unexpected", http.StatusInternalServerError)
 		return
@@ -122,9 +94,9 @@ func (s *S3Gateway) Download(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("ETag", fmt.Sprintf("\"%s\"", info.Digest))
 		}
 	}
-	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(res)))
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(data)))
 	w.Header().Set("Content-Type", "application/octet-stream")
-	_, err = w.Write(res)
+	_, err = w.Write(data)
 	if err != nil {
 		fmt.Printf("Error writing the response, %s", err)
 		http.Error(w, "Unexpected", http.StatusInternalServerError)
@@ -137,21 +109,7 @@ func (s *S3Gateway) HeadObject(w http.ResponseWriter, r *http.Request) {
 	bucket := mux.Vars(r)["bucket"]
 	key := mux.Vars(r)["key"]
 
-	nc := s.NATS()
-
-	js, err := nc.JetStream()
-	if err != nil {
-		handleJetStreamError(err, w)
-		return
-	}
-
-	os, err := js.ObjectStore(bucket)
-	if err != nil {
-		handleObjectStoreError(err, w)
-		return
-	}
-
-	res, err := os.GetInfo(key)
+	res, err := s.client.GetObjectInfo(bucket, key)
 	if err != nil {
 		fmt.Printf("Error at  listing object info, %s", err)
 		http.Error(w, "Object not found in the bucket", http.StatusNotFound)
@@ -178,20 +136,7 @@ func (s *S3Gateway) Upload(w http.ResponseWriter, r *http.Request) {
 
 	fmt.Println("Upload to", bucket, "with key", key)
 
-	nc := s.NATS()
-	js, err := nc.JetStream()
-	if err != nil {
-		handleJetStreamError(err, w)
-		return
-	}
-
-	os, err := js.ObjectStore(bucket)
-	if err != nil {
-		handleObjectStoreError(err, w)
-		return
-	}
-
-	res, err := os.PutBytes(key, body)
+	res, err := s.client.PutObject(bucket, key, body)
 	if err != nil {
 		http.Error(w, "Unexpected", http.StatusInternalServerError)
 		return
@@ -207,20 +152,7 @@ func (s *S3Gateway) DeleteObject(w http.ResponseWriter, r *http.Request) {
 	bucket := mux.Vars(r)["bucket"]
 	key := mux.Vars(r)["key"]
 
-	nc := s.NATS()
-	js, err := nc.JetStream()
-	if err != nil {
-		handleJetStreamError(err, w)
-		return
-	}
-
-	os, err := js.ObjectStore(bucket)
-	if err != nil {
-		handleObjectStoreError(err, w)
-		return
-	}
-
-	err = os.Delete(key)
+	err := s.client.DeleteObject(bucket, key)
 	if err != nil {
 		http.Error(w, "Unexpected", http.StatusInternalServerError)
 		return

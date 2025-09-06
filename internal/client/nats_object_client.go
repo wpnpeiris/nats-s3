@@ -7,12 +7,12 @@ import (
 // NatsObjectClient provides convenience helpers for common NATS JetStream
 // Object Store operations, built on top of the base Client connection.
 type NatsObjectClient struct {
-	Client
+	Client *Client
 }
 
 // DeleteObject removes an object identified by bucket and key.
 func (c *NatsObjectClient) DeleteObject(bucket string, key string) error {
-	nc := c.NATS()
+	nc := c.Client.NATS()
 	js, err := nc.JetStream()
 	if err != nil {
 		return err
@@ -26,7 +26,7 @@ func (c *NatsObjectClient) DeleteObject(bucket string, key string) error {
 
 // GetObjectInfo fetches metadata for an object.
 func (c *NatsObjectClient) GetObjectInfo(bucket string, key string) (*nats.ObjectInfo, error) {
-	nc := c.NATS()
+	nc := c.Client.NATS()
 	js, err := nc.JetStream()
 	if err != nil {
 		return nil, err
@@ -44,7 +44,7 @@ func (c *NatsObjectClient) GetObjectInfo(bucket string, key string) (*nats.Objec
 
 // GetObject retrieves an object and its metadata.
 func (c *NatsObjectClient) GetObject(bucket string, key string) (*nats.ObjectInfo, []byte, error) {
-	nc := c.NATS()
+	nc := c.Client.NATS()
 	js, err := nc.JetStream()
 	if err != nil {
 		return nil, nil, err
@@ -66,7 +66,7 @@ func (c *NatsObjectClient) GetObject(bucket string, key string) (*nats.ObjectInf
 
 // ListBuckets returns a channel of object store statuses for all buckets.
 func (c *NatsObjectClient) ListBuckets() (<-chan nats.ObjectStoreStatus, error) {
-	nc := c.NATS()
+	nc := c.Client.NATS()
 	js, err := nc.JetStream()
 	if err != nil {
 		return nil, err
@@ -76,7 +76,7 @@ func (c *NatsObjectClient) ListBuckets() (<-chan nats.ObjectStoreStatus, error) 
 
 // ListObjects lists all objects in the given bucket.
 func (c *NatsObjectClient) ListObjects(bucket string) ([]*nats.ObjectInfo, error) {
-	nc := c.NATS()
+	nc := c.Client.NATS()
 	js, err := nc.JetStream()
 	if err != nil {
 		return nil, err
@@ -94,7 +94,7 @@ func (c *NatsObjectClient) ListObjects(bucket string) ([]*nats.ObjectInfo, error
 
 // PutObject writes an object to the given bucket with the provided key.
 func (c *NatsObjectClient) PutObject(bucket string, key string, data []byte) (*nats.ObjectInfo, error) {
-	nc := c.NATS()
+	nc := c.Client.NATS()
 	js, err := nc.JetStream()
 	if err != nil {
 		return nil, err

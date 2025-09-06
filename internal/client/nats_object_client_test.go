@@ -49,7 +49,7 @@ func TestNatsObjectClient_BasicCRUD(t *testing.T) {
 		t.Fatalf("create object store failed: %v", err)
 	}
 
-	oc := &NatsObjectClient{Client: *c}
+	oc := &NatsObjectClient{Client: c}
 
 	// Put
 	info, err := oc.PutObject(bucket, key, data)

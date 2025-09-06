@@ -16,15 +16,11 @@ type BucketsResult struct {
 }
 
 func (s *S3Gateway) ListBuckets(w http.ResponseWriter, r *http.Request) {
-	nc := s.NATS()
-
-	js, err := nc.JetStream()
+	entries, err := s.client.ListBuckets()
 	if err != nil {
 		handleJetStreamError(err, w)
 		return
 	}
-
-	entries := js.ObjectStores()
 
 	var buckets []*s3.Bucket
 
