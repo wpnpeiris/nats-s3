@@ -1,13 +1,13 @@
 package server
 
 import (
-	"github.com/wpnpeiris/nats-s3/internal/s3api"
 	"log"
 	"net/http"
 	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/nats-io/nats.go"
+	"github.com/wpnpeiris/nats-s3/internal/s3api"
 )
 
 type GatewayServer struct {

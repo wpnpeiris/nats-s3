@@ -1,10 +1,10 @@
 package s3api
 
 import (
-	"github.com/nats-io/nats.go"
 	"net/http"
 
 	"github.com/gorilla/mux"
+	"github.com/nats-io/nats.go"
 	"github.com/wpnpeiris/nats-s3/internal/client"
 )
 

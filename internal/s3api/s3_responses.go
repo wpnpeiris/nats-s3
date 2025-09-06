@@ -23,12 +23,12 @@ const (
 // WriteXMLResponse encodes the response as XML and writes it with the given
 // HTTP status code and appropriate Content-Type.
 func WriteXMLResponse(w http.ResponseWriter, r *http.Request, statusCode int, response interface{}) {
-    WriteResponse(w, r, statusCode, EncodeXMLResponse(response), MimeXML)
+	WriteResponse(w, r, statusCode, EncodeXMLResponse(response), MimeXML)
 }
 
 // WriteEmptyResponse writes only headers and the given status code.
 func WriteEmptyResponse(w http.ResponseWriter, r *http.Request, statusCode int) {
-    WriteResponse(w, r, statusCode, []byte{}, mimeNone)
+	WriteResponse(w, r, statusCode, []byte{}, mimeNone)
 }
 
 // EncodeXMLResponse serializes a value into an XML byte slice with xml.Header.

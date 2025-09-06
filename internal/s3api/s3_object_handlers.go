@@ -8,9 +8,8 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
-	"github.com/gorilla/mux"
-
 	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/gorilla/mux"
 )
 
 // ListBucketResult is a minimal representation of S3's ListBucket result.
