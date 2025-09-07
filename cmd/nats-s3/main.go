@@ -29,12 +29,7 @@ func main() {
 
 	log.Printf("Starting NATS S3 server...")
 
-	var natsOptions []nats.Option
-	if natsUser != "" && natsPassword != "" {
-		natsOptions = append(natsOptions, nats.UserInfo(natsUser, natsPassword))
-	}
-
-	gateway := server.NewGatewayServer(natsServers, natsOptions)
+	gateway := server.NewGatewayServer(natsServers, natsUser, natsPassword)
 	err := gateway.ListenAndServe(serverListen)
 	if err != nil {
 		log.Fatal(err)

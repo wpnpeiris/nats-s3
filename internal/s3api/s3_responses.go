@@ -8,8 +8,10 @@ import (
 	"bytes"
 	"encoding/xml"
 	"fmt"
+	"github.com/gorilla/mux"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -19,6 +21,31 @@ const (
 	mimeNone mimeType = ""
 	MimeXML  mimeType = "application/xml"
 )
+
+// RESTErrorResponse - error response format
+type RESTErrorResponse struct {
+	XMLName    xml.Name `xml:"Error" json:"-"`
+	Code       string   `xml:"Code" json:"Code"`
+	Message    string   `xml:"Message" json:"Message"`
+	Resource   string   `xml:"Resource" json:"Resource"`
+	RequestID  string   `xml:"RequestId" json:"RequestId"`
+	Key        string   `xml:"Key,omitempty" json:"Key,omitempty"`
+	BucketName string   `xml:"BucketName,omitempty" json:"BucketName,omitempty"`
+
+	// Underlying HTTP status code for the returned error
+	StatusCode int `xml:"-" json:"-"`
+}
+
+func NewRESTErrorResponse(err APIError, resource string, bucket, object string) RESTErrorResponse {
+	return RESTErrorResponse{
+		Code:       err.Code,
+		BucketName: bucket,
+		Key:        object,
+		Message:    err.Description,
+		Resource:   resource,
+		RequestID:  fmt.Sprintf("%d", time.Now().UnixNano()),
+	}
+}
 
 // WriteXMLResponse encodes the response as XML and writes it with the given
 // HTTP status code and appropriate Content-Type.
@@ -53,6 +80,19 @@ func setCommonHeaders(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Credentials", "true")
 	}
+}
+
+func WriteErrorResponse(w http.ResponseWriter, r *http.Request, errorCode ErrorCode) {
+	vars := mux.Vars(r)
+	bucket := vars["bucket"]
+	object := vars["object"]
+	if strings.HasPrefix(object, "/") {
+		object = object[1:]
+	}
+
+	apiError := GetAPIError(errorCode)
+	errorResponse := NewRESTErrorResponse(apiError, r.URL.Path, bucket, object)
+	WriteXMLResponse(w, r, apiError.HTTPStatusCode, errorResponse)
 }
 
 // WriteResponse writes headers, status code, and optional body, flushing the

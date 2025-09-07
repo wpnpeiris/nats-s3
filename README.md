@@ -66,10 +66,30 @@ Flags
 - `--natsServers`: Comma‑separated NATS server URLs (default from `nats.DefaultURL`).
 - `--natsUser`, `--natsPassword`: Optional NATS credentials.
 
+## Docker
+Build the image
+```shell
+docker build -t nats-s3:dev .
+```
+
+Run the gateway (NATS must be reachable at 127.0.0.1:4222)
+```shell
+docker run --rm -p 5222:5222 \
+  --name nats-s3 \
+  --network host \
+  nats-s3:dev \
+  --listen 0.0.0.0:5222 \
+  --natsServers nats://127.0.0.1:4222
+```
+
 ## Notes
 - This gateway focuses on S3 object basics (list/get/head/put/delete). Many S3
   sub‑resources return 501 Not Implemented.
 - Object keys with slashes are supported.
+
+## Roadmap & Contributing
+- See ROADMAP.md for planned milestones.
+- Contributions welcome! See CONTRIBUTING.md and CODE_OF_CONDUCT.md.
 
 
 ## Contributing
@@ -77,4 +97,3 @@ Flags
 - See `CONTRIBUTING.md` for how to get started.
 
 - Please follow our simple `CODE_OF_CONDUCT.md`.
-
