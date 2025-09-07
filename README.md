@@ -41,33 +41,71 @@ NATS-S3 Gateway
 ```
 
 
-## Usage
-Once `nats-s3` is running and connected to a NATS cluster, the NATS Object Store is
-accessible via the S3 API. Examples below use the AWS CLI.
+## Quick Start
+Follow these steps to spin up NATS-S3, integrated with NATS server, and use AWS CLI to work with a bucket and objects.
 
-#### List NATS Buckets
-```shell
-$ aws s3 ls  --endpoint-url=http://localhost:5222
+1) Prerequisites
+- Docker (for NATS)
+- AWS CLI (v2 recommended)
+
+2) Start NATS (with JetStream) via Docker
+```bash
+docker run -p 4222:4222 -ti nats:latest -js --user my-access-key --pass my-secret-key
 ```
 
-#### List content of NATS Bucket, bucket1
-```shell
-$ aws s3 ls s3://bucket1 --endpoint-url=http://localhost:5222
+3) Start the nats-s3 gateway
+- Choose a single access/secret pair. These map to NATS username/password and AWS access/secret.
+```bash
+# In a separate terminal
+./nats-s3 \
+  --listen 0.0.0.0:5222 \
+  --natsServers nats://127.0.0.1:4222 \
+  --natsUser my-access-key \
+  --natsPassword my-secret-key
 ```
 
-#### List content of NATS Bucket, bucket1
-```shell
-$ aws s3 ls s3://bucket1 --endpoint-url=http://localhost:5222
+4) Configure your AWS CLI to use the same credentials
+```bash
+export AWS_ACCESS_KEY_ID=my-access-key
+export AWS_SECRET_ACCESS_KEY=my-secret-key
+# SigV4 scope requires a region; us-east-1 is common
+export AWS_DEFAULT_REGION=us-east-1
 ```
 
-#### Upload an object to a NATS bucket
-```shell
-$ aws s3 cp file1.txt s3://bucket1 --endpoint-url=http://localhost:5222
+5) Create a bucket
+```bash
+aws s3 mb s3://bucket1 --endpoint-url=http://localhost:5222
 ```
 
-#### Download an object from a NATS bucket
-```shell
-$ aws s3 cp s3://bucket1/file1.txt file1_copy.txt --endpoint-url=http://localhost:5222
+6) List buckets
+```bash
+aws s3 ls --endpoint-url=http://localhost:5222
+```
+
+7) Put an object
+```bash
+echo "hello world" > file.txt
+aws s3 cp file.txt s3://bucket1/hello.txt --endpoint-url=http://localhost:5222
+```
+
+8) List bucket contents
+```bash
+aws s3 ls s3://bucket1 --endpoint-url=http://localhost:5222
+```
+
+9) Download the object
+```bash
+aws s3 cp s3://bucket1/hello.txt ./hello_copy.txt --endpoint-url=http://localhost:5222
+```
+
+10) Delete the object
+```bash
+aws s3 rm s3://bucket1/hello.txt --endpoint-url=http://localhost:5222
+```
+
+Optional: delete the bucket
+```bash
+aws s3 rb s3://bucket1 --endpoint-url=http://localhost:5222
 ```
 
 ## Build & Run
@@ -75,7 +113,7 @@ $ aws s3 cp s3://bucket1/file1.txt file1_copy.txt --endpoint-url=http://localhos
 
 Build
 ```shell
-go build ./cmd/nats-s3
+make build
 ```
 
 Run
@@ -91,11 +129,6 @@ Flags
 - `--listen`: HTTP bind address for the S3 gateway (default `0.0.0.0:5222`).
 - `--natsServers`: Comma‑separated NATS server URLs (default from `nats.DefaultURL`).
 - `--natsUser`, `--natsPassword`: Optional NATS credentials.
-
-## Notes
-- This gateway focuses on S3 object basics (list/get/head/put/delete). Many S3
-  sub‑resources return 501 Not Implemented.
-- Object keys with slashes are supported.
 
 ## Authentication
 nats-s3 uses AWS Signature Version 4 (SigV4) for every S3 request. The gateway is

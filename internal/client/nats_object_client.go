@@ -28,6 +28,16 @@ func (c *NatsObjectClient) CreateBucket(bucketName string) (nats.ObjectStoreStat
 	return os.Status()
 }
 
+// DeleteBucket delete an bucket identified by bucket name.
+func (c *NatsObjectClient) DeleteBucket(bucket string) error {
+	nc := c.Client.NATS()
+	js, err := nc.JetStream()
+	if err != nil {
+		return err
+	}
+	return js.DeleteObjectStore(bucket)
+}
+
 // DeleteObject removes an object identified by bucket and key.
 func (c *NatsObjectClient) DeleteObject(bucket string, key string) error {
 	nc := c.Client.NATS()

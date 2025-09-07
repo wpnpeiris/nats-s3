@@ -36,6 +36,8 @@ type RESTErrorResponse struct {
 	StatusCode int `xml:"-" json:"-"`
 }
 
+// NewRESTErrorResponse constructs an S3-style XML error body for the given
+// API error and request context (resource path, bucket, and object).
 func NewRESTErrorResponse(err APIError, resource string, bucket, object string) RESTErrorResponse {
 	return RESTErrorResponse{
 		Code:       err.Code,
@@ -82,6 +84,8 @@ func setCommonHeaders(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// WriteErrorResponse looks up the API error for the given code and writes a
+// serialized S3 XML error with the appropriate HTTP status.
 func WriteErrorResponse(w http.ResponseWriter, r *http.Request, errorCode ErrorCode) {
 	vars := mux.Vars(r)
 	bucket := vars["bucket"]

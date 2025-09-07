@@ -52,7 +52,7 @@ func (s *S3Gateway) RegisterRoutes(router *mux.Router) {
 	r.Methods(http.MethodPut).Path("/{bucket}").HandlerFunc(s.iam.Auth(s.CreateBucket))       // CreateBucket
 	r.Methods(http.MethodHead).Path("/{bucket}").HandlerFunc(s.iam.Auth(s.notImplemented))    // HeadBucket
 	r.Methods(http.MethodGet).Path("/{bucket}").HandlerFunc(s.iam.Auth(s.ListObjects))        // ListObjects/ListObjectsV2
-	r.Methods(http.MethodDelete).Path("/{bucket}").HandlerFunc(s.iam.Auth(s.notImplemented))  // DeleteBucket
+	r.Methods(http.MethodDelete).Path("/{bucket}").HandlerFunc(s.iam.Auth(s.DeleteBucket))    // DeleteBucket
 	r.Methods(http.MethodOptions).Path("/{bucket}").HandlerFunc(s.iam.Auth(s.notImplemented)) // CORS preflight
 	r.Methods(http.MethodPost).Path("/{bucket}").HandlerFunc(s.iam.Auth(s.notImplemented))    // POST object (HTML form upload)
 

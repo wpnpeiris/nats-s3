@@ -39,6 +39,17 @@ func (s *S3Gateway) CreateBucket(w http.ResponseWriter, r *http.Request) {
 	WriteXMLResponse(w, r, http.StatusOK, response)
 }
 
+func (s *S3Gateway) DeleteBucket(w http.ResponseWriter, r *http.Request) {
+	bucket := mux.Vars(r)["bucket"]
+	err := s.client.DeleteBucket(bucket)
+	if err != nil {
+		handleInternalError(err, w)
+		return
+	}
+
+	WriteEmptyResponse(w, r, http.StatusNoContent)
+}
+
 // ListBuckets enumerates existing JetStream Object Store buckets and returns
 // a simple S3-compatible XML response.
 func (s *S3Gateway) ListBuckets(w http.ResponseWriter, r *http.Request) {
