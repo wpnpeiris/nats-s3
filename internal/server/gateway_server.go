@@ -14,8 +14,12 @@ type GatewayServer struct {
 	s3Gateway *s3api.S3Gateway
 }
 
-func NewGatewayServer(natsServers string, options []nats.Option) (gatewayServer *GatewayServer) {
-	s3Gateway := s3api.NewS3Gateway(natsServers, options)
+func NewGatewayServer(natsServers string, natsUser string, natsPassword string) (gatewayServer *GatewayServer) {
+	var natsOptions []nats.Option
+	if natsUser != "" && natsPassword != "" {
+		natsOptions = append(natsOptions, nats.UserInfo(natsUser, natsPassword))
+	}
+	s3Gateway := s3api.NewS3Gateway(natsServers, natsUser, natsPassword)
 	return &GatewayServer{s3Gateway}
 }
 
