@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
-	"github.com/nats-io/nats.go"
 	"github.com/wpnpeiris/nats-s3/internal/s3api"
 )
 
@@ -14,15 +13,13 @@ type GatewayServer struct {
 	s3Gateway *s3api.S3Gateway
 }
 
+// NewGatewayServer constructs a server that exposes the S3 API backed by NATS.
 func NewGatewayServer(natsServers string, natsUser string, natsPassword string) (gatewayServer *GatewayServer) {
-	var natsOptions []nats.Option
-	if natsUser != "" && natsPassword != "" {
-		natsOptions = append(natsOptions, nats.UserInfo(natsUser, natsPassword))
-	}
 	s3Gateway := s3api.NewS3Gateway(natsServers, natsUser, natsPassword)
 	return &GatewayServer{s3Gateway}
 }
 
+// ListenAndServe starts the HTTP server and blocks until it exits.
 func (server *GatewayServer) ListenAndServe(endpoint string) error {
 	router := mux.NewRouter()
 

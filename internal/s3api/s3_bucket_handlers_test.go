@@ -74,3 +74,34 @@ func TestListBuckets(t *testing.T) {
 		}
 	}
 }
+
+func TestCreateBucket(t *testing.T) {
+	s := startJSServer(t)
+	defer s.Shutdown()
+
+	gw := NewS3Gateway(s.ClientURL(), "", "")
+
+	r := mux.NewRouter()
+	gw.RegisterRoutes(r)
+
+	bucket := "created-bucket"
+	req := httptest.NewRequest("PUT", "/"+bucket, nil)
+	rr := httptest.NewRecorder()
+	r.ServeHTTP(rr, req)
+
+	if rr.Code != 200 {
+		t.Fatalf("unexpected status: got %d body=%s", rr.Code, rr.Body.String())
+	}
+
+	// Verify bucket exists in NATS by opening ObjectStore
+	nc := gw.client.Client.NATS()
+	nc.SetClosedHandler(func(_ *nats.Conn) {})
+	defer nc.Close()
+	js, err := nc.JetStream()
+	if err != nil {
+		t.Fatalf("JetStream failed: %v", err)
+	}
+	if _, err := js.ObjectStore(bucket); err != nil {
+		t.Fatalf("expected created object store %q, got error: %v", bucket, err)
+	}
+}

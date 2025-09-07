@@ -49,7 +49,7 @@ func (s *S3Gateway) RegisterRoutes(router *mux.Router) {
 	r.Methods(http.MethodGet).Path("/").HandlerFunc(s.iam.Auth(s.ListBuckets)) // ListBuckets
 
 	// Bucket root
-	r.Methods(http.MethodPut).Path("/{bucket}").HandlerFunc(s.iam.Auth(s.notImplemented))     // CreateBucket
+	r.Methods(http.MethodPut).Path("/{bucket}").HandlerFunc(s.iam.Auth(s.CreateBucket))       // CreateBucket
 	r.Methods(http.MethodHead).Path("/{bucket}").HandlerFunc(s.iam.Auth(s.notImplemented))    // HeadBucket
 	r.Methods(http.MethodGet).Path("/{bucket}").HandlerFunc(s.iam.Auth(s.ListObjects))        // ListObjects/ListObjectsV2
 	r.Methods(http.MethodDelete).Path("/{bucket}").HandlerFunc(s.iam.Auth(s.notImplemented))  // DeleteBucket

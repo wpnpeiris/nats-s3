@@ -10,6 +10,24 @@ type NatsObjectClient struct {
 	Client *Client
 }
 
+func (c *NatsObjectClient) CreateBucket(bucketName string) (nats.ObjectStoreStatus, error) {
+	nc := c.Client.NATS()
+	js, err := nc.JetStream()
+	if err != nil {
+		return nil, err
+	}
+
+	os, err := js.CreateObjectStore(&nats.ObjectStoreConfig{
+		Bucket:  bucketName,
+		Storage: nats.FileStorage,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return os.Status()
+}
+
 // DeleteObject removes an object identified by bucket and key.
 func (c *NatsObjectClient) DeleteObject(bucket string, key string) error {
 	nc := c.Client.NATS()
@@ -35,11 +53,7 @@ func (c *NatsObjectClient) GetObjectInfo(bucket string, key string) (*nats.Objec
 	if err != nil {
 		return nil, err
 	}
-	info, err := os.GetInfo(key)
-	if err != nil {
-		return nil, err
-	}
-	return info, nil
+	return os.GetInfo(key)
 }
 
 // GetObject retrieves an object and its metadata.
@@ -85,11 +99,7 @@ func (c *NatsObjectClient) ListObjects(bucket string) ([]*nats.ObjectInfo, error
 	if err != nil {
 		return nil, err
 	}
-	res, err := os.List()
-	if err != nil {
-		return nil, err
-	}
-	return res, nil
+	return os.List()
 }
 
 // PutObject writes an object to the given bucket with the provided key.
@@ -103,9 +113,5 @@ func (c *NatsObjectClient) PutObject(bucket string, key string, data []byte) (*n
 	if err != nil {
 		return nil, err
 	}
-	res, err := os.PutBytes(key, data)
-	if err != nil {
-		return nil, err
-	}
-	return res, nil
+	return os.PutBytes(key, data)
 }

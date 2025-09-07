@@ -9,6 +9,7 @@ import (
 	"github.com/nats-io/nuid"
 )
 
+// Client wraps a NATS connection and metadata used by gateway components.
 type Client struct {
 	cmu  sync.Mutex
 	id   string
@@ -16,6 +17,8 @@ type Client struct {
 	nc   *nats.Conn
 }
 
+// NewClient creates a new Client with a generated ID and the provided kind
+// used in connection names and logs.
 func NewClient(kind string) *Client {
 	id := nuid.Next()
 	return &Client{
@@ -24,6 +27,8 @@ func NewClient(kind string) *Client {
 	}
 }
 
+// SetupConnectionToNATS establishes a connection to the given NATS servers
+// applying the provided options and sets standard event handlers.
 func (c *Client) SetupConnectionToNATS(servers string, options ...nats.Option) error {
 
 	options = append(options, nats.Name(c.Name()))
@@ -50,18 +55,21 @@ func (c *Client) SetupConnectionToNATS(servers string, options ...nats.Option) e
 	return err
 }
 
+// NATS returns the underlying NATS connection.
 func (c *Client) NATS() *nats.Conn {
 	c.cmu.Lock()
 	defer c.cmu.Unlock()
 	return c.nc
 }
 
+// ID returns the client's stable unique identifier.
 func (c *Client) ID() string {
 	c.cmu.Lock()
 	defer c.cmu.Unlock()
 	return c.id
 }
 
+// Name returns a human-readable connection name used for NATS.
 func (c *Client) Name() string {
 	c.cmu.Lock()
 	defer c.cmu.Unlock()

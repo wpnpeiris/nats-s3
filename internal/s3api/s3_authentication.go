@@ -34,11 +34,14 @@ type AuthHeaderParameters struct {
 
 // Credential holds credentials to verify in authentication
 // This should be further extend to different authentication mechanism NATS supports.
+// Credential holds a single AWS-style access/secret pair used to validate
+// SigV4 requests. The same pair maps to NATS username/password.
 type Credential struct {
 	accessKey string
 	secretKey string
 }
 
+// NewCredential constructs a Credential with the given access and secret keys.
 func NewCredential(accessKey string, secretKey string) Credential {
 	return Credential{
 		accessKey: accessKey,
@@ -46,10 +49,13 @@ func NewCredential(accessKey string, secretKey string) Credential {
 	}
 }
 
+// IdentityAccessManagement verifies AWS SigV4 and authorizes requests using
+// a configured Credential.
 type IdentityAccessManagement struct {
 	credential Credential
 }
 
+// NewIdentityAccessManagement returns an IAM verifier bound to one credential.
 func NewIdentityAccessManagement(credential Credential) *IdentityAccessManagement {
 	return &IdentityAccessManagement{
 		credential: credential,
@@ -60,6 +66,9 @@ func (iam *IdentityAccessManagement) isDisabled() bool {
 	return iam.credential == Credential{}
 }
 
+// Auth verifies AWS SigV4 (header-based and presigned URL) against the
+// configured credential. On success, calls the wrapped handler; otherwise
+// returns an S3-style XML error response.
 func (iam *IdentityAccessManagement) Auth(f http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if iam.isDisabled() {
