@@ -25,7 +25,7 @@ func TestListBuckets(t *testing.T) {
 	s := startJSServer(t)
 	defer s.Shutdown()
 
-	gw := NewS3Gateway(s.ClientURL(), nil)
+	gw := NewS3Gateway(s.ClientURL(), "", "")
 
 	// Create a couple of buckets so ListBuckets has content.
 	nc := gw.client.Client.NATS()
