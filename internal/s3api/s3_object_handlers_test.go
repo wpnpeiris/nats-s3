@@ -15,7 +15,7 @@ func TestObjectHandlers_CRUD(t *testing.T) {
 	s := startJSServer(t)
 	defer s.Shutdown()
 
-	gw := NewS3Gateway(s.ClientURL(), nil)
+	gw := NewS3Gateway(s.ClientURL(), "", "")
 
 	// Ensure bucket exists
 	nc := gw.client.Client.NATS()

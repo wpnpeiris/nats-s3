@@ -12,6 +12,26 @@ import (
 	"time"
 )
 
+type AuthError struct {
+	code ErrorCode
+}
+
+func (e *AuthError) Error() string {
+	return fmt.Sprintf("Auth error code: %d", e.code)
+}
+
+type AuthHeaderParameters struct {
+	algo          string
+	accessKey     string
+	scopeDate     string
+	scopeRegion   string
+	scopeService  string
+	signedHeaders string
+	signature     string
+	requestTime   string
+	hashedPayload string
+}
+
 // Credential holds credentials to verify in authentication
 // This should be further extend to different authentication mechanism NATS supports.
 type Credential struct {
@@ -36,28 +56,17 @@ func NewIdentityAccessManagement(credential Credential) *IdentityAccessManagemen
 	}
 }
 
-type AuthError struct {
-	code ErrorCode
-}
-
-func (e *AuthError) Error() string {
-	return fmt.Sprintf("Auth error code: %d", e.code)
-}
-
-type AuthHeaderParameters struct {
-	algo          string
-	accessKey     string
-	scopeDate     string
-	scopeRegion   string
-	scopeService  string
-	signedHeaders string
-	signature     string
-	requestTime   string
-	hashedPayload string
+func (iam *IdentityAccessManagement) isDisabled() bool {
+	return iam.credential == Credential{}
 }
 
 func (iam *IdentityAccessManagement) Auth(f http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if iam.isDisabled() {
+			f(w, r)
+			return
+		}
+
 		// Support both header-based SigV4 and presigned URL SigV4.
 		hp, authErr := extractAuthHeaderParameters(r)
 		if authErr != nil {
