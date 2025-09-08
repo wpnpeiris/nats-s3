@@ -2,7 +2,6 @@ package main
 
 import (
 	"flag"
-	"fmt"
 	"log"
 
 	"github.com/nats-io/nats.go"
@@ -17,7 +16,7 @@ func main() {
 		natsPassword string
 	)
 	flag.Usage = func() {
-		fmt.Printf("Usage: nats-s3 [options...]\n\n")
+		log.Printf("Usage: nats-s3 [options...]\n\n")
 		flag.PrintDefaults()
 	}
 

@@ -2,7 +2,9 @@ package s3api
 
 import (
 	"encoding/xml"
+	"errors"
 	"github.com/gorilla/mux"
+	"github.com/wpnpeiris/nats-s3/internal/client"
 	"net/http"
 	"time"
 
@@ -23,7 +25,7 @@ func (s *S3Gateway) CreateBucket(w http.ResponseWriter, r *http.Request) {
 	bucket := mux.Vars(r)["bucket"]
 	os, err := s.client.CreateBucket(bucket)
 	if err != nil {
-		handleInternalError(err, w)
+		WriteErrorResponse(w, r, ErrInternalError)
 		return
 	}
 
@@ -43,7 +45,11 @@ func (s *S3Gateway) DeleteBucket(w http.ResponseWriter, r *http.Request) {
 	bucket := mux.Vars(r)["bucket"]
 	err := s.client.DeleteBucket(bucket)
 	if err != nil {
-		handleInternalError(err, w)
+		if errors.Is(err, client.ErrBucketNotFound) {
+			WriteErrorResponse(w, r, ErrNoSuchBucket)
+			return
+		}
+		WriteErrorResponse(w, r, ErrInternalError)
 		return
 	}
 
@@ -55,7 +61,7 @@ func (s *S3Gateway) DeleteBucket(w http.ResponseWriter, r *http.Request) {
 func (s *S3Gateway) ListBuckets(w http.ResponseWriter, r *http.Request) {
 	entries, err := s.client.ListBuckets()
 	if err != nil {
-		handleInternalError(err, w)
+		WriteErrorResponse(w, r, ErrInternalError)
 		return
 	}
 
