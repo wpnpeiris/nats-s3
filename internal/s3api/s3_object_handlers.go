@@ -2,8 +2,11 @@ package s3api
 
 import (
 	"encoding/xml"
+	"errors"
 	"fmt"
+	"github.com/wpnpeiris/nats-s3/internal/client"
 	"io"
+	"log"
 	"net/http"
 	"time"
 
@@ -36,12 +39,20 @@ type CopyObjectResult struct {
 func (s *S3Gateway) ListObjects(w http.ResponseWriter, r *http.Request) {
 	bucket := mux.Vars(r)["bucket"]
 
-	fmt.Println("List Objects in bucket", bucket)
+	log.Println("List Objects in bucket", bucket)
 
 	res, err := s.client.ListObjects(bucket)
 	if err != nil {
-		fmt.Printf("Error at Listing bucket, %s", err)
-		http.Error(w, "Bucket not found in the ObjectStore", http.StatusNotFound)
+		if errors.Is(err, client.ErrBucketNotFound) {
+			WriteErrorResponse(w, r, ErrNoSuchBucket)
+			return
+		}
+		if errors.Is(err, client.ErrObjectNotFound) {
+			WriteEmptyResponse(w, r, http.StatusOK)
+			return
+		}
+
+		WriteErrorResponse(w, r, ErrInternalError)
 		return
 	}
 
@@ -70,8 +81,8 @@ func (s *S3Gateway) ListObjects(w http.ResponseWriter, r *http.Request) {
 
 	err = xml.NewEncoder(w).Encode(xmlResponse)
 	if err != nil {
-		fmt.Printf("Error enconding the response, %s", err)
-		http.Error(w, "Unexpected", http.StatusInternalServerError)
+		log.Printf("Error enconding the response, %s", err)
+		WriteErrorResponse(w, r, ErrInternalError)
 		return
 	}
 }
@@ -84,7 +95,15 @@ func (s *S3Gateway) Download(w http.ResponseWriter, r *http.Request) {
 
 	info, data, err := s.client.GetObject(bucket, key)
 	if err != nil {
-		http.Error(w, "Unexpected", http.StatusInternalServerError)
+		if errors.Is(err, client.ErrBucketNotFound) {
+			WriteErrorResponse(w, r, ErrNoSuchBucket)
+			return
+		}
+		if errors.Is(err, client.ErrObjectNotFound) {
+			WriteErrorResponse(w, r, ErrNoSuchKey)
+			return
+		}
+		WriteErrorResponse(w, r, ErrInternalError)
 		return
 	}
 
@@ -98,8 +117,8 @@ func (s *S3Gateway) Download(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/octet-stream")
 	_, err = w.Write(data)
 	if err != nil {
-		fmt.Printf("Error writing the response, %s", err)
-		http.Error(w, "Unexpected", http.StatusInternalServerError)
+		log.Printf("Error writing the response, %s", err)
+		WriteErrorResponse(w, r, ErrInternalError)
 		return
 	}
 }
@@ -111,12 +130,20 @@ func (s *S3Gateway) HeadObject(w http.ResponseWriter, r *http.Request) {
 
 	res, err := s.client.GetObjectInfo(bucket, key)
 	if err != nil {
-		fmt.Printf("Error at  listing object info, %s", err)
+		if errors.Is(err, client.ErrBucketNotFound) {
+			WriteErrorResponse(w, r, ErrNoSuchBucket)
+			return
+		}
+		if errors.Is(err, client.ErrObjectNotFound) {
+			WriteErrorResponse(w, r, ErrNoSuchKey)
+			return
+		}
+
 		http.Error(w, "Object not found in the bucket", http.StatusNotFound)
 		return
 	}
 
-	fmt.Printf("Head object %s/%s\n", bucket, key)
+	log.Printf("Head object %s/%s", bucket, key)
 	w.Header().Set("Last-Modified", res.ModTime.UTC().Format(time.RFC1123))
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", res.Size))
 	if res.Digest != "" {
@@ -134,11 +161,15 @@ func (s *S3Gateway) Upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fmt.Println("Upload to", bucket, "with key", key)
+	log.Println("Upload to", bucket, "with key", key)
 
 	res, err := s.client.PutObject(bucket, key, body)
 	if err != nil {
-		http.Error(w, "Unexpected", http.StatusInternalServerError)
+		if errors.Is(err, client.ErrBucketNotFound) {
+			WriteErrorResponse(w, r, ErrNoSuchBucket)
+			return
+		}
+		WriteErrorResponse(w, r, ErrInternalError)
 		return
 	}
 	if res.Digest != "" {
@@ -154,7 +185,15 @@ func (s *S3Gateway) DeleteObject(w http.ResponseWriter, r *http.Request) {
 
 	err := s.client.DeleteObject(bucket, key)
 	if err != nil {
-		http.Error(w, "Unexpected", http.StatusInternalServerError)
+		if errors.Is(err, client.ErrBucketNotFound) {
+			WriteErrorResponse(w, r, ErrNoSuchBucket)
+			return
+		}
+		if errors.Is(err, client.ErrObjectNotFound) {
+			WriteErrorResponse(w, r, ErrNoSuchKey)
+			return
+		}
+		WriteErrorResponse(w, r, ErrInternalError)
 		return
 	}
 

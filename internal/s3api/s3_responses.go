@@ -9,6 +9,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"github.com/gorilla/mux"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -67,7 +68,7 @@ func EncodeXMLResponse(response interface{}) []byte {
 	encoder := xml.NewEncoder(&bytesBuffer)
 	err := encoder.Encode(response)
 	if err != nil {
-		fmt.Printf("Error enconding the response, %s", err)
+		log.Printf("Error enconding the response, %s", err)
 	}
 	return bytesBuffer.Bytes()
 }
@@ -111,10 +112,10 @@ func WriteResponse(w http.ResponseWriter, r *http.Request, statusCode int, respo
 	}
 	w.WriteHeader(statusCode)
 	if response != nil {
-		fmt.Printf("status %d %s len=%d\n", statusCode, mType, len(response))
+		log.Printf("status %d %s len=%d", statusCode, mType, len(response))
 		_, err := w.Write(response)
 		if err != nil {
-			fmt.Printf("Error writing the response, %s", err)
+			log.Printf("Error writing the response, %s", err)
 		}
 		w.(http.Flusher).Flush()
 	}
