@@ -3,7 +3,6 @@ package client
 import (
 	"fmt"
 	"log"
-	"sync"
 
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nuid"
@@ -11,7 +10,6 @@ import (
 
 // Client wraps a NATS connection and metadata used by gateway components.
 type Client struct {
-	cmu  sync.Mutex
 	id   string
 	kind string
 	nc   *nats.Conn
@@ -32,9 +30,6 @@ func NewClient(kind string) *Client {
 func (c *Client) SetupConnectionToNATS(servers string, options ...nats.Option) error {
 
 	options = append(options, nats.Name(c.Name()))
-
-	c.cmu.Lock()
-	defer c.cmu.Unlock()
 
 	nc, err := nats.Connect(servers, options...)
 	if err != nil {
@@ -57,21 +52,15 @@ func (c *Client) SetupConnectionToNATS(servers string, options ...nats.Option) e
 
 // NATS returns the underlying NATS connection.
 func (c *Client) NATS() *nats.Conn {
-	c.cmu.Lock()
-	defer c.cmu.Unlock()
 	return c.nc
 }
 
 // ID returns the client's stable unique identifier.
 func (c *Client) ID() string {
-	c.cmu.Lock()
-	defer c.cmu.Unlock()
 	return c.id
 }
 
 // Name returns a human-readable connection name used for NATS.
 func (c *Client) Name() string {
-	c.cmu.Lock()
-	defer c.cmu.Unlock()
 	return fmt.Sprintf("%s:%s", c.kind, c.id)
 }
