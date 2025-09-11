@@ -167,12 +167,12 @@ Notes
   same AccessKey/Secret configured on the gateway.
 
 ## Roadmap & Contributing
-- See ROADMAP.md for planned milestones.
+- See [ROADMAP.md](ROADMAP.md) for planned milestones.
 - Contributions welcome! See CONTRIBUTING.md and CODE_OF_CONDUCT.md.
 
 
 ## Contributing
 
-- See `CONTRIBUTING.md` for how to get started.
+- See [CONTRIBUTING.md](CONTRIBUTING.md) for how to get started.
 
-- Please follow our simple `CODE_OF_CONDUCT.md`.
+- Please follow our simple [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
