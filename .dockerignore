@@ -9,8 +9,9 @@ bin/
 .vscode/
 .idea/
 
-# CI artifacts
+# CI coverage
 coverage.out
+coverage.html
 
 # Modules cache (not needed in image)
 **/node_modules

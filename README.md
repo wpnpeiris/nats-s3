@@ -130,6 +130,16 @@ Flags
 - `--natsServers`: Comma‑separated NATS server URLs (default from `nats.DefaultURL`).
 - `--natsUser`, `--natsPassword`: Optional NATS credentials.
 
+### Coverage
+Generate coverage profile and HTML report locally:
+```bash
+make coverage           # writes coverage.out
+make coverage-report    # prints total coverage summary
+make coverage-html      # writes coverage.html
+```
+
+In CI, coverage is generated and uploaded as an artifact.
+
 ## Docker
 Build the image
 ```bash
