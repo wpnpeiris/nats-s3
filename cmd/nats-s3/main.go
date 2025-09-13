@@ -8,7 +8,15 @@ import (
 	"github.com/wpnpeiris/nats-s3/internal/server"
 )
 
+// Version is set at build time via -ldflags.
+var Version string
+
 func main() {
+	// Version is injected via -ldflags "-X main.Version=..." at build time.
+	// Defaults to "dev" if not set.
+	if Version == "" {
+		Version = "dev"
+	}
 	var (
 		serverListen string
 		natsServers  string
@@ -26,7 +34,7 @@ func main() {
 	flag.StringVar(&natsPassword, "natsPassword", "", "Nats server password")
 	flag.Parse()
 
-	log.Printf("Starting NATS S3 server...")
+	log.Printf("Starting NATS S3 server... version=%s", Version)
 
 	gateway := server.NewGatewayServer(natsServers, natsUser, natsPassword)
 	err := gateway.ListenAndServe(serverListen)
