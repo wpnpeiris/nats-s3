@@ -130,6 +130,36 @@ Flags
 - `--natsServers`: Comma‑separated NATS server URLs (default from `nats.DefaultURL`).
 - `--natsUser`, `--natsPassword`: Optional NATS credentials.
 
+## Docker
+Build the image
+```bash
+docker build -t nats-s3:dev .
+```
+
+Run with a locally running NATS on the same Docker network
+```bash
+
+# Start NATS (JetStream) on the host network
+docker run --network host -p 4222:4222 \
+  nats:latest -js --user my-access-key --pass my-secret-key
+
+# Start nats-s3 and expose port 5222
+docker run --network host -p 5222:5222 nats-s3:latest \
+  --listen 0.0.0.0:5222 \
+  --natsServers nats://127.0.0.1:4222 \
+  --natsUser my-access-key \
+  --natsPassword my-secret-key
+```
+
+Test with AWS CLI
+```bash
+export AWS_ACCESS_KEY_ID=my-access-key
+export AWS_SECRET_ACCESS_KEY=my-secret-key
+export AWS_DEFAULT_REGION=us-east-1
+
+aws s3 ls --endpoint-url=http://localhost:5222
+```
+
 ## Authentication
 nats-s3 uses AWS Signature Version 4 (SigV4) for every S3 request. The gateway is
 configured with a single NATS username/password pair, and that same pair is used as

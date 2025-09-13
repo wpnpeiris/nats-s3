@@ -1,0 +1,17 @@
+# Build output
+bin/
+
+# VCS
+.git
+.gitignore
+
+# IDE
+.vscode/
+.idea/
+
+# CI artifacts
+coverage.out
+
+# Modules cache (not needed in image)
+**/node_modules
+
