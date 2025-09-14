@@ -4,11 +4,7 @@ on:
   push:
     tags:
       - 'v*.*.*'
-  workflow_dispatch:
-    inputs:
-      tag:
-        description: 'Tag to build (e.g., v0.0.2)'
-        required: true
+  workflow_dispatch: {}
 
 permissions:
   contents: read
@@ -20,9 +16,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          # Use the provided tag when manually triggered, otherwise the event ref
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
