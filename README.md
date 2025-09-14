@@ -140,6 +140,21 @@ make coverage-html      # writes coverage.html
 
 In CI, coverage is generated and uploaded as an artifact.
 
+### Releasing (GoReleaser)
+Tagged releases are built and published via GoReleaser.
+
+- Create and push a tag like `v0.2.0`:
+```bash
+git tag -a v0.2.0 -m "v0.2.0"
+git push origin v0.2.0
+```
+
+CI will build multi‑platform archives and attach them to the GitHub Release.
+Local dry run:
+```bash
+goreleaser release --snapshot --clean
+```
+
 ## Docker
 Build the image
 ```bash
