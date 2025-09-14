@@ -1,0 +1,37 @@
+project_name: nats-s3
+
+builds:
+  - id: nats-s3
+    main: ./cmd/nats-s3
+    binary: nats-s3
+    env:
+      - CGO_ENABLED=0
+    ldflags:
+      - -s -w -X main.Version={{.Version}}
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    mod_timestamp: '{{ .CommitTimestamp }}'
+
+archives:
+  - id: nats-s3-archives
+    builds: [nats-s3]
+    format_overrides:
+      - goos: windows
+        format: zip
+    files:
+      - LICENSE
+      - README.md
+
+checksum:
+  name_template: "SHA256SUMS"
+  algorithm: sha256
+
+release:
+  github:
+    owner: '{{ envOrDefault "GITHUB_REPOSITORY_OWNER" "nats-s3" }}'
+    name: '{{ envOrDefault "GITHUB_REPOSITORY_NAME" "nats-s3" }}'
+  name_template: "Release {{.Tag}}"
+  draft: true
+
+changelog:
+  disable: true
