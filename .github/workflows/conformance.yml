@@ -1,0 +1,78 @@
+name: Conformance
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Branch or tag to run against'
+        required: true
+        default: 'main'
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  s3-compat:
+    name: AWS-CLI subset
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.ref || github.ref }}
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Install AWS CLI
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y awscli
+
+      - name: Build gateway
+        run: |
+          make build
+
+      - name: Start NATS (JetStream)
+        run: |
+          docker run -d --name nats-js -p 4222:4222 \
+            nats:latest -js --user ci-access --pass ci-secret
+          echo "Waiting for NATS to be ready..."
+          for i in {1..30}; do
+            (echo > /dev/tcp/127.0.0.1/4222) >/dev/null 2>&1 && { echo "NATS ready"; break; }; sleep 1; done
+        shell: bash
+
+      - name: Start nats-s3 gateway
+        run: |
+          nohup ./bin/nats-s3 \
+            --listen 0.0.0.0:5222 \
+            --natsServers nats://127.0.0.1:4222 \
+            --natsUser ci-access \
+            --natsPassword ci-secret > gateway.log 2>&1 &
+          echo $! > gateway.pid
+          echo "Waiting for gateway to be ready..."
+          for i in {1..30}; do
+            (echo > /dev/tcp/127.0.0.1/5222) >/dev/null 2>&1 && { echo ready; break; }; sleep 1; done
+        shell: bash
+
+      - name: Run curated conformance subset
+        env:
+          AWS_ACCESS_KEY_ID: ci-access
+          AWS_SECRET_ACCESS_KEY: ci-secret
+          AWS_DEFAULT_REGION: us-east-1
+        run: |
+          bash scripts/ci-conformance.sh
+
+      - name: Show gateway logs on failure
+        if: failure()
+        run: |
+          echo '--- gateway.log ---'
+          cat gateway.log || true
+
+      - name: Cleanup
+        if: always()
+        run: |
+          if [ -f gateway.pid ]; then kill $(cat gateway.pid) || true; fi
+          docker rm -f nats-js || true

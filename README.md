@@ -263,3 +263,7 @@ Notes
 - See [CONTRIBUTING.md](CONTRIBUTING.md) for how to get started.
 
 - Please follow our simple [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
+
+## Conformance
+- CI runs a curated subset of S3 compatibility tests using the AWS CLI against the gateway. See details and the pass list: [CONFORMANCE.md](CONFORMANCE.md).
+- Workflow status: [![Conformance](https://github.com/wpnpeiris/nats-s3/actions/workflows/conformance.yml/badge.svg)](https://github.com/wpnpeiris/nats-s3/actions/workflows/conformance.yml)
