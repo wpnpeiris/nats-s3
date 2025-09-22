@@ -1,38 +1,43 @@
-name: NATS-S3 Code Coverage
+name: Coverage
 
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Branch or tag to run against'
+        required: true
+        default: 'main'
+  pull_request:
+    branches: [ main ]
+  push:
+    branches: [ main ]
 
 jobs:
-  coverage:
+  unit-coverage:
+    name: Unit test coverage
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.ref || github.ref }}
 
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: stable
+          go-version-file: go.mod
 
-      - name: Go fmt check
+      - name: Run coverage
         run: |
-          files=$(gofmt -s -l .)
-          if [ -n "$files" ]; then
-            echo "Unformatted files:" && echo "$files" && exit 1
-          fi
+          make coverage
 
-      - name: Go vet
-        run: go vet ./...
-
-      - name: Test with coverage
-        run: go test -race -covermode=atomic -coverprofile=coverage.out ./...
-
-      - name: Coverage summary
-        run: go tool cover -func=coverage.out | tail -n 1
-
-      - name: Upload coverage artifact
-        uses: actions/upload-artifact@v4
+      - name: Upload to Codecov
+        uses: codecov/codecov-action@v4
         with:
-          name: coverage
-          path: coverage.out
+          files: coverage.out
+          flags: unit
+          fail_ci_if_error: false
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
