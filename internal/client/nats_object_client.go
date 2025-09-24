@@ -1,6 +1,7 @@
 package client
 
 import (
+	"bytes"
 	"errors"
 	"github.com/nats-io/nats.go"
 	"log"
@@ -180,8 +181,12 @@ func (c *NatsObjectClient) ListObjects(bucket string) ([]*nats.ObjectInfo, error
 	return ls, err
 }
 
-// PutObject writes an object to the given bucket with the provided key.
-func (c *NatsObjectClient) PutObject(bucket string, key string, data []byte) (*nats.ObjectInfo, error) {
+// PutObject writes an object to the given bucket with the provided key and metadata
+func (c *NatsObjectClient) PutObject(bucket string,
+	key string,
+	contentType string,
+	metadata map[string]string,
+	data []byte) (*nats.ObjectInfo, error) {
 	nc := c.Client.NATS()
 	js, err := nc.JetStream()
 	if err != nil {
@@ -196,5 +201,14 @@ func (c *NatsObjectClient) PutObject(bucket string, key string, data []byte) (*n
 		}
 		return nil, err
 	}
-	return os.PutBytes(key, data)
+
+	meta := nats.ObjectMeta{
+		Name:     key,
+		Metadata: metadata,
+		Headers: nats.Header{
+			"Content-Type": []string{contentType},
+		},
+	}
+
+	return os.Put(&meta, bytes.NewReader(data))
 }

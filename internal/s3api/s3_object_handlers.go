@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -149,6 +150,20 @@ func (s *S3Gateway) HeadObject(w http.ResponseWriter, r *http.Request) {
 	if res.Digest != "" {
 		w.Header().Set("ETag", fmt.Sprintf("\"%s\"", res.Digest))
 	}
+	if res.Headers != nil {
+		if cts, ok := res.Headers["Content-Type"]; ok && len(cts) > 0 && cts[0] != "" {
+			w.Header().Set("Content-Type", cts[0])
+		}
+	}
+	if res.Metadata != nil {
+		for k, v := range res.Metadata {
+			if k == "" {
+				continue
+			}
+			w.Header().Set(k, v)
+		}
+	}
+
 }
 
 // Upload stores an object and responds with 200 and an ETag header.
@@ -161,9 +176,11 @@ func (s *S3Gateway) Upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Println("Upload to", bucket, "with key", key)
+	contentType := extractContentType(r)
+	meta := extractMetadata(r)
 
-	res, err := s.client.PutObject(bucket, key, body)
+	log.Println("Upload to", bucket, "with key", key, " with content-type", contentType, " with user-meta", meta)
+	res, err := s.client.PutObject(bucket, key, contentType, meta, body)
 	if err != nil {
 		if errors.Is(err, client.ErrBucketNotFound) {
 			WriteErrorResponse(w, r, ErrNoSuchBucket)
@@ -176,6 +193,24 @@ func (s *S3Gateway) Upload(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("ETag", fmt.Sprintf("\"%s\"", res.Digest))
 	}
 	WriteEmptyResponse(w, r, http.StatusOK)
+}
+
+// extractContentType returns request Header value of "Content-Type"
+func extractContentType(r *http.Request) string {
+	return r.Header.Get("Content-Type")
+}
+
+// extractMetadata returns request Header value of "x-amz-meta-"
+func extractMetadata(r *http.Request) map[string]string {
+	meta := map[string]string{}
+	for name, vals := range r.Header {
+		ln := strings.ToLower(name)
+		if strings.HasPrefix(ln, "x-amz-meta-") {
+			meta[ln] = strings.Join(vals, ",")
+		}
+	}
+
+	return meta
 }
 
 // DeleteObject deletes the specified object and responds with 204 No Content.
