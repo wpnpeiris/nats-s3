@@ -162,7 +162,7 @@ func updateMetadataHeaders(obj *nats.ObjectInfo, w http.ResponseWriter) {
 			if k == "" {
 				continue
 			}
-			w.Header().Set(k, v)
+			w.Header().Set(fmt.Sprintf("x-amz-meta-%s", k), v)
 		}
 	}
 }
