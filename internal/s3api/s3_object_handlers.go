@@ -4,6 +4,7 @@ import (
 	"encoding/xml"
 	"errors"
 	"fmt"
+	"github.com/nats-io/nats.go"
 	"github.com/wpnpeiris/nats-s3/internal/client"
 	"io"
 	"log"
@@ -109,13 +110,12 @@ func (s *S3Gateway) Download(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if info != nil {
-		w.Header().Set("Last-Modified", info.ModTime.UTC().Format(time.RFC1123))
-		if info.Digest != "" {
-			w.Header().Set("ETag", fmt.Sprintf("\"%s\"", info.Digest))
-		}
+		updateLastModifiedHeader(info, w)
+		updateETagHeader(info, w)
+		updateContentLength(info, w)
+		updateContentTypeHeaders(info, w)
 	}
-	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(data)))
-	w.Header().Set("Content-Type", "application/octet-stream")
+
 	_, err = w.Write(data)
 	if err != nil {
 		log.Printf("Error writing the response, %s", err)
@@ -145,25 +145,52 @@ func (s *S3Gateway) HeadObject(w http.ResponseWriter, r *http.Request) {
 	}
 
 	log.Printf("Head object %s/%s", bucket, key)
-	w.Header().Set("Last-Modified", res.ModTime.UTC().Format(time.RFC1123))
-	w.Header().Set("Content-Length", fmt.Sprintf("%d", res.Size))
-	if res.Digest != "" {
-		w.Header().Set("ETag", fmt.Sprintf("\"%s\"", res.Digest))
+	if res != nil {
+		updateLastModifiedHeader(res, w)
+		updateContentLength(res, w)
+		updateETagHeader(res, w)
+		updateContentTypeHeaders(res, w)
+		updateMetadataHeaders(res, w)
 	}
-	if res.Headers != nil {
-		if cts, ok := res.Headers["Content-Type"]; ok && len(cts) > 0 && cts[0] != "" {
-			w.Header().Set("Content-Type", cts[0])
-		}
-	}
-	if res.Metadata != nil {
-		for k, v := range res.Metadata {
+
+}
+
+// updateMetadataHeaders writes metadata headers in response
+func updateMetadataHeaders(obj *nats.ObjectInfo, w http.ResponseWriter) {
+	if obj.Metadata != nil {
+		for k, v := range obj.Metadata {
 			if k == "" {
 				continue
 			}
 			w.Header().Set(k, v)
 		}
 	}
+}
 
+// updateLastModifiedHeader writes 'Last-Modified' header in response
+func updateLastModifiedHeader(obj *nats.ObjectInfo, w http.ResponseWriter) {
+	w.Header().Set("Last-Modified", obj.ModTime.UTC().Format(time.RFC1123))
+}
+
+// updateETagHeader writes 'ETag' header in response
+func updateETagHeader(obj *nats.ObjectInfo, w http.ResponseWriter) {
+	if obj.Digest != "" {
+		w.Header().Set("ETag", fmt.Sprintf("\"%s\"", obj.Digest))
+	}
+}
+
+// updateContentLength writes 'Content-Length' header in response
+func updateContentLength(obj *nats.ObjectInfo, w http.ResponseWriter) {
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", obj.Size))
+}
+
+// updateContentTypeHeaders writes 'Content-Type' header in response
+func updateContentTypeHeaders(obj *nats.ObjectInfo, w http.ResponseWriter) {
+	if obj != nil && obj.Headers != nil {
+		if cts, ok := obj.Headers["Content-Type"]; ok && len(cts) > 0 && cts[0] != "" {
+			w.Header().Set("Content-Type", cts[0])
+		}
+	}
 }
 
 // Upload stores an object and responds with 200 and an ETag header.
