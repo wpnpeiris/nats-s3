@@ -1,4 +1,5 @@
 # NATS
+
 NATS is a high‑performance distributed messaging system with pub/sub at its core and a
 built‑in persistence layer (JetStream) enabling Streaming, Key‑Value, and Object Store.
 It includes authentication/authorization, multi‑tenancy, and rich deployment topologies.

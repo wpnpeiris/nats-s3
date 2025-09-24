@@ -52,11 +52,14 @@ func TestNatsObjectClient_BasicCRUD(t *testing.T) {
 	oc := &NatsObjectClient{Client: c}
 
 	// Put
-	info, err := oc.PutObject(bucket, key, data)
+	info, err := oc.PutObject(bucket, key, "text/plain", map[string]string{"k": "v"}, data)
 	if err != nil {
 		t.Fatalf("PutObject failed: %v", err)
 	}
-	if info == nil || info.Name != key {
+	if info == nil ||
+		info.Name != key ||
+		info.Headers.Get("Content-Type") != "text/plain" ||
+		info.Metadata["k"] != "v" {
 		t.Fatalf("unexpected PutObject info: %+v", info)
 	}
 
