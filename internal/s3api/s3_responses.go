@@ -50,6 +50,16 @@ func NewRESTErrorResponse(err APIError, resource string, bucket, object string) 
 	}
 }
 
+func SetEtag(w http.ResponseWriter, etag string) {
+	if etag != "" {
+		if strings.HasPrefix(etag, "\"") {
+			w.Header()["ETag"] = []string{etag}
+		} else {
+			w.Header()["ETag"] = []string{"\"" + etag + "\""}
+		}
+	}
+}
+
 // WriteXMLResponse encodes the response as XML and writes it with the given
 // HTTP status code and appropriate Content-Type.
 func WriteXMLResponse(w http.ResponseWriter, r *http.Request, statusCode int, response interface{}) {
