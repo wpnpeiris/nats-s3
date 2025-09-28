@@ -173,10 +173,10 @@ func (s *S3Gateway) RegisterRoutes(router *mux.Router) {
 	// Multipart upload operations on object
 	addObjectSubresource(r, http.MethodPost, "uploads", s.iam.Auth(s.InitiateMultipartUpload)) // Initiate multipart upload
 	// Upload part, Get part, Complete, Abort (all matched by uploadId presence)
-	r.Methods(http.MethodPut).Path("/{bucket}/{key:.*}").Queries("uploadId", "{uploadId}").HandlerFunc(s.iam.Auth(s.UploadPart))        // UploadPart
-	r.Methods(http.MethodGet).Path("/{bucket}/{key:.*}").Queries("uploadId", "{uploadId}").HandlerFunc(s.iam.Auth(s.notImplemented))    // GetObject (by part?) / List parts
-	r.Methods(http.MethodPost).Path("/{bucket}/{key:.*}").Queries("uploadId", "{uploadId}").HandlerFunc(s.iam.Auth(s.notImplemented))   // CompleteMultipartUpload
-	r.Methods(http.MethodDelete).Path("/{bucket}/{key:.*}").Queries("uploadId", "{uploadId}").HandlerFunc(s.iam.Auth(s.notImplemented)) // AbortMultipartUpload
+	r.Methods(http.MethodPut).Path("/{bucket}/{key:.*}").Queries("uploadId", "{uploadId}").HandlerFunc(s.iam.Auth(s.UploadPart))               // UploadPart
+	r.Methods(http.MethodGet).Path("/{bucket}/{key:.*}").Queries("uploadId", "{uploadId}").HandlerFunc(s.iam.Auth(s.notImplemented))           // GetObject (by part?) / List parts
+	r.Methods(http.MethodPost).Path("/{bucket}/{key:.*}").Queries("uploadId", "{uploadId}").HandlerFunc(s.iam.Auth(s.CompleteMultipartUpload)) // CompleteMultipartUpload
+	r.Methods(http.MethodDelete).Path("/{bucket}/{key:.*}").Queries("uploadId", "{uploadId}").HandlerFunc(s.iam.Auth(s.notImplemented))        // AbortMultipartUpload
 
 	// Object root
 	r.Methods(http.MethodPut).Path("/{bucket}/{key:.*}").HandlerFunc(s.iam.Auth(s.Upload))             // PutObject / CopyObject

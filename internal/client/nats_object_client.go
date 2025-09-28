@@ -19,6 +19,7 @@ var ErrBucketNotFound = errors.New("bucket not found")
 var ErrObjectNotFound = errors.New("object not found")
 var ErrUploadNotFound = errors.New("multipart upload not found")
 var ErrUploadCompleted = errors.New("completed multipart upload")
+var ErrMissingPart = errors.New("missing part")
 
 // PartMeta describes a single part in a multipart upload session.
 // It records the part number, ETag (checksum), size in bytes, and the
@@ -101,6 +102,30 @@ func (m *MultiPartStore) createPartUpload(partKey string, dataReader *io.PipeRea
 		return nil, err
 	}
 	return obj, nil
+}
+
+func (m *MultiPartStore) getPartUpload(partKey string) (nats.ObjectResult, error) {
+	return m.TempPartStore.Get(partKey)
+}
+
+func (m *MultiPartStore) cleanMultipartUpload(meta UploadMeta) error {
+	for pn := range meta.Parts {
+		key := partKey(meta.Bucket, meta.Key, meta.UploadID, pn)
+		err := m.TempPartStore.Delete(key)
+		if err != nil {
+			log.Printf("Error at cleanMultipartUpload when TempPartStore.Delete(): %v\n", err)
+			return err
+		}
+	}
+
+	sessionKey := sessionKey(meta.Bucket, meta.Key, meta.UploadID)
+	err := m.SessionStore.Delete(sessionKey)
+	if err != nil {
+		log.Printf("Error at cleanMultipartUpload when SessionStore.Delete(): %v\n", err)
+		return err
+	}
+
+	return nil
 }
 
 // getUploadMeta fetches the KV entry for a multipart upload session, including
@@ -380,6 +405,80 @@ func (c *NatsObjectClient) UploadPart(bucket string, key string, uploadID string
 		return "", err
 	}
 	return etag, nil
+}
+
+func (c *NatsObjectClient) CompleteMultipartUpload(bucket string, key string, uploadID string, sortedPartNumbers []int) (string, error) {
+	sessionKey := sessionKey(bucket, key, uploadID)
+	sessionData, err := c.MultiPartStore.getUploadMeta(sessionKey)
+	if err != nil {
+		return "", ErrUploadNotFound
+	}
+
+	var meta UploadMeta
+	if err := json.Unmarshal(sessionData.Value(), &meta); err != nil {
+		log.Printf("Error at UploadPart when json.Unmarshal(): %v\n", err)
+		return "", err
+	}
+
+	md5Concat := md5.New()
+	pr, pw := io.Pipe()
+	go func() {
+		defer pw.Close()
+		for _, pn := range sortedPartNumbers {
+			pmeta, ok := meta.Parts[pn]
+			if !ok {
+				_ = pw.CloseWithError(ErrMissingPart)
+				return
+			}
+			partKey := partKey(bucket, key, uploadID, pn)
+			rpart, err := c.MultiPartStore.getPartUpload(partKey)
+			if err != nil {
+				_ = pw.CloseWithError(err)
+				return
+			}
+
+			rawHex := strings.Trim(pmeta.ETag, `"`)
+			b, _ := hex.DecodeString(rawHex)
+			md5Concat.Write(b)
+
+			_, err = io.Copy(pw, rpart)
+			rpart.Close()
+			if err != nil {
+				_ = pw.CloseWithError(err)
+				return
+			}
+		}
+	}()
+
+	nc := c.Client.NATS()
+	js, err := nc.JetStream()
+	if err != nil {
+		log.Printf("Error at CompleteMultipartUpload when js.JetStream: %v\n", err)
+		return "", err
+	}
+	os, err := js.ObjectStore(bucket)
+	if err != nil {
+		log.Printf("Error at CompleteMultipartUpload when js.ObjectStore: %v\n", err)
+		if errors.Is(err, nats.ErrStreamNotFound) {
+			return "", ErrBucketNotFound
+		}
+		return "", err
+	}
+	_, err = os.Put(&nats.ObjectMeta{Name: key}, pr)
+	if err != nil {
+		log.Printf("Error at CompleteMultipartUpload when os.Put(): %v\n", err)
+		return "", err
+	}
+
+	etagHex := hex.EncodeToString(md5Concat.Sum(nil))
+	finalETag := fmt.Sprintf(`"%s-%d"`, strings.ToLower(etagHex), len(sortedPartNumbers))
+
+	err = c.MultiPartStore.cleanMultipartUpload(meta)
+	if err != nil {
+		log.Printf("WARN, failed to clean multipart session/temp data: %v\n", err)
+	}
+
+	return finalETag, nil
 }
 
 // sessionKey builds the KV key used to persist state for a multipart upload.
