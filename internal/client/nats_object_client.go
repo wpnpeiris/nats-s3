@@ -56,25 +56,42 @@ type MultiPartStore struct {
 	TempPartStore nats.ObjectStore
 }
 
-// updateUploadMeta persists the given session value at the provided key in the
+// createUploadMeta persists the given session value at the provided key in the
 // session Key-Value store. The value is expected to be a JSON-encoded
 // UploadMeta blob. Returns any error encountered during the put operation.
-func (m *MultiPartStore) updateUploadMeta(meta UploadMeta) error {
-	log.Printf("updateUploadMeta : %v\n", meta)
+func (m *MultiPartStore) createUploadMeta(meta UploadMeta) error {
+	log.Printf("createUploadMeta : %v\n", meta)
 	data, err := json.Marshal(meta)
 	if err != nil {
-		log.Printf("Error at updateUploadMeta when json.Marshal(): %v\n", err)
+		log.Printf("Error at createUploadMeta when json.Marshal(): %v\n", err)
 		return err
 	}
 	key := sessionKey(meta.Bucket, meta.Key, meta.UploadID)
 	_, err = m.SessionStore.Put(key, data)
 	if err != nil {
-		log.Printf("Error at updateUploadMeta when SessionStore.Put(): %v\n", err)
+		log.Printf("Error at createUploadMeta when SessionStore.Put(): %v\n", err)
 		return err
 	}
 	return nil
 }
 
+func (m *MultiPartStore) saveUploadMeta(meta UploadMeta, revision uint64) error {
+	data, err := json.Marshal(meta)
+	if err != nil {
+		log.Printf("Error at saveUploadMeta when json.Marshal(): %v\n", err)
+		return err
+	}
+	key := sessionKey(meta.Bucket, meta.Key, meta.UploadID)
+	_, err = m.SessionStore.Update(key, data, revision)
+	if err != nil {
+		log.Printf("Error at saveUploadMeta when SessionStore.Update(): %v\n", err)
+		return err
+	}
+	return nil
+}
+
+// createPartUpload streams a part from the provided reader into the temporary
+// Object Store under the given part key and returns the stored object's info.
 func (m *MultiPartStore) createPartUpload(partKey string, dataReader *io.PipeReader) (*nats.ObjectInfo, error) {
 	log.Printf("createPartUpload : %s\n", partKey)
 	obj, err := m.TempPartStore.Put(&nats.ObjectMeta{Name: partKey}, dataReader)
@@ -82,18 +99,18 @@ func (m *MultiPartStore) createPartUpload(partKey string, dataReader *io.PipeRea
 		log.Printf("Error at createPartUpload when TempPartStore.Put(): %v\n", err)
 		return nil, err
 	}
-
 	return obj, nil
 }
 
-func (m *MultiPartStore) getSession(sessionKey string) ([]byte, error) {
+// getUploadMeta fetches the KV entry for a multipart upload session, including
+// its current revision number for optimistic updates.
+func (m *MultiPartStore) getUploadMeta(sessionKey string) (nats.KeyValueEntry, error) {
 	entry, err := m.SessionStore.Get(sessionKey)
 	if err != nil {
 		log.Printf("Error at getSession when kv.Get(): %v\n", err)
 		return nil, err
 	}
-
-	return entry.Value(), nil
+	return entry, nil
 }
 
 // NatsObjectClient provides convenience helpers for common NATS JetStream
@@ -314,20 +331,20 @@ func (c *NatsObjectClient) InitMultipartUpload(bucket string, key string, upload
 		Parts:     map[int]PartMeta{},
 	}
 
-	return c.MultiPartStore.updateUploadMeta(meta)
+	return c.MultiPartStore.createUploadMeta(meta)
 }
 
 // UploadPart streams a part into temporary storage and records its ETag/size
 // under the multipart session. Returns the hex ETag (without quotes).
 func (c *NatsObjectClient) UploadPart(bucket string, key string, uploadID string, part int, dataReader io.ReadCloser) (string, error) {
 	sessionKey := sessionKey(bucket, key, uploadID)
-	sessionData, err := c.MultiPartStore.getSession(sessionKey)
+	sessionData, err := c.MultiPartStore.getUploadMeta(sessionKey)
 	if err != nil {
 		return "", ErrUploadNotFound
 	}
 
 	var meta UploadMeta
-	if err := json.Unmarshal(sessionData, &meta); err != nil {
+	if err := json.Unmarshal(sessionData.Value(), &meta); err != nil {
 		log.Printf("Error at UploadPart when json.Unmarshal(): %v\n", err)
 		return "", err
 	}
@@ -357,17 +374,19 @@ func (c *NatsObjectClient) UploadPart(bucket string, key string, uploadID string
 		Number: part, ETag: `"` + etag + `"`, Size: obj.Size, StoredAt: time.Now().Unix(),
 	}
 
-	err = c.MultiPartStore.updateUploadMeta(meta)
+	err = c.MultiPartStore.saveUploadMeta(meta, sessionData.Revision())
 	if err != nil {
 		return "", err
 	}
 	return etag, nil
 }
 
+// sessionKey builds the KV key used to persist state for a multipart upload.
 func sessionKey(bucket, key, uploadID string) string {
 	return fmt.Sprintf("multi_parts/%s/%s/%s", bucket, key, uploadID)
 }
 
+// partKey constructs the Object Store key for a specific uploaded part
 func partKey(bucket, key, uploadID string, part int) string {
 	return fmt.Sprintf("multi_parts/%s/%s/%s/%06d", bucket, key, uploadID, part)
 }
