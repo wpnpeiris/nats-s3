@@ -1,6 +1,7 @@
 package s3api
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/gorilla/mux"
@@ -31,11 +32,43 @@ func NewS3Gateway(natsServers string, natsUser string, natsPassword string) *S3G
 	if err != nil {
 		panic("Failed to connect to NATS")
 	}
+	mps := createMultipartSessionStore(natsClient)
 	return &S3Gateway{
 		client: &client.NatsObjectClient{
-			Client: natsClient,
+			Client:         natsClient,
+			MultiPartStore: mps,
 		},
 		iam: NewIdentityAccessManagement(credential),
+	}
+}
+
+func createMultipartSessionStore(c *client.Client) *client.MultiPartStore {
+	nc := c.NATS()
+	js, err := nc.JetStream()
+	if err != nil {
+		panic("Failed to create to multipart session store when nc.JetStream()")
+	}
+
+	kv, err := js.KeyValue(client.MultiPartSessionStoreName)
+	if err != nil && errors.Is(err, nats.ErrBucketNotFound) {
+		kv, err = js.CreateKeyValue(&nats.KeyValueConfig{
+			Bucket: client.MultiPartSessionStoreName,
+		})
+		if err != nil {
+			panic("Failed to create to multipart session store when js.CreateKeyValue()")
+		}
+	}
+
+	os, err := js.ObjectStore(client.MultiPartTempStoreName)
+	if err != nil && errors.Is(err, nats.ErrStreamNotFound) {
+		os, err = js.CreateObjectStore(&nats.ObjectStoreConfig{
+			Bucket: client.MultiPartTempStoreName,
+		})
+	}
+
+	return &client.MultiPartStore{
+		SessionStore:  kv,
+		TempPartStore: os,
 	}
 }
 
@@ -134,7 +167,7 @@ func (s *S3Gateway) RegisterRoutes(router *mux.Router) {
 	addObjectSubresource(r, http.MethodPut, "retention", s.iam.Auth(s.notImplemented))
 
 	// Multipart upload operations on object
-	addObjectSubresource(r, http.MethodPost, "uploads", s.iam.Auth(s.notImplemented)) // Initiate multipart upload
+	addObjectSubresource(r, http.MethodPost, "uploads", s.iam.Auth(s.InitiateMultipartUpload)) // Initiate multipart upload
 	// Upload part, Get part, Complete, Abort (all matched by uploadId presence)
 	r.Methods(http.MethodPut).Path("/{bucket}/{key:.*}").Queries("uploadId", "{uploadId}").HandlerFunc(s.iam.Auth(s.notImplemented))    // UploadPart
 	r.Methods(http.MethodGet).Path("/{bucket}/{key:.*}").Queries("uploadId", "{uploadId}").HandlerFunc(s.iam.Auth(s.notImplemented))    // GetObject (by part?) / List parts

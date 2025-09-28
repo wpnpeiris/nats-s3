@@ -2,20 +2,73 @@ package client
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"github.com/nats-io/nats.go"
 	"log"
+	"time"
 )
 
 var ErrBucketNotFound = errors.New("bucket not found")
 var ErrObjectNotFound = errors.New("object not found")
 
+// PartMeta describes a single part in a multipart upload session.
+// It records the part number, ETag (checksum), size in bytes, and the
+// time the part was stored (Unix seconds).
+type PartMeta struct {
+	Number   int    `json:"number"`
+	ETag     string `json:"etag"`
+	Size     int64  `json:"size"`
+	StoredAt int64  `json:"stored_at_unix"`
+}
+
+// UploadMeta captures the server-side state of a multipart upload session.
+// It includes identifiers (UploadID, Bucket, Key), initiation time (UTC),
+// optional owner, constraints (minimum part size and max parts), the
+// collected parts, and completion/abort flags. The JSON value is persisted
+// in a Key-Value store under a session-specific key.
+type UploadMeta struct {
+	UploadID  string           `json:"upload_id"`
+	Bucket    string           `json:"bucket"`
+	Key       string           `json:"key"`
+	Initiated time.Time        `json:"initiated"`
+	Owner     string           `json:"owner,omitempty"` // optional, auth principal
+	MinPartSz int64            `json:"min_part_size"`   // default 5MiB
+	MaxParts  int              `json:"max_parts"`       // default 10000
+	Parts     map[int]PartMeta `json:"parts"`
+	Completed bool             `json:"completed"`
+	Aborted   bool             `json:"aborted"`
+}
+
+// MultiPartStore groups storage backends used for multipart uploads.
+// SessionStore tracks session metadata in a Key-Value bucket, while
+// TempPartStore holds uploaded parts in a temporary Object Store.
+type MultiPartStore struct {
+	SessionStore  nats.KeyValue
+	TempPartStore nats.ObjectStore
+}
+
+// createSession persists the given session value at the provided key in the
+// session Key-Value store. The value is expected to be a JSON-encoded
+// UploadMeta blob. Returns any error encountered during the put operation.
+func (m *MultiPartStore) createSession(sessionKey string, sessionValue []byte) error {
+	_, err := m.SessionStore.Put(sessionKey, sessionValue)
+	if err != nil {
+		log.Printf("Error at createSession when kv.Put(): %v\n", err)
+		return err
+	}
+	return nil
+}
+
 // NatsObjectClient provides convenience helpers for common NATS JetStream
 // Object Store operations, built on top of the base Client connection.
 type NatsObjectClient struct {
-	Client *Client
+	Client         *Client
+	MultiPartStore *MultiPartStore
 }
 
+// CreateBucket creates a JetStream Object Store bucket.
 func (c *NatsObjectClient) CreateBucket(bucketName string) (nats.ObjectStoreStatus, error) {
 	nc := c.Client.NATS()
 	js, err := nc.JetStream()
@@ -211,4 +264,27 @@ func (c *NatsObjectClient) PutObject(bucket string,
 	}
 
 	return os.Put(&meta, bytes.NewReader(data))
+}
+
+func (c *NatsObjectClient) InitMultipartUpload(bucket string, key string, uploadID string) error {
+	meta := UploadMeta{
+		UploadID:  uploadID,
+		Bucket:    bucket,
+		Key:       key,
+		Initiated: time.Now().UTC(),
+		MinPartSz: 5 * 1024 * 1024,
+		MaxParts:  10000,
+		Parts:     map[int]PartMeta{},
+	}
+	data, err := json.Marshal(meta)
+	if err != nil {
+		log.Printf("Error at InitMultipartUpload when json.Marshal(): %v\n", err)
+		return err
+	}
+	sessionKey := sessionKey(bucket, key, uploadID)
+	return c.MultiPartStore.createSession(sessionKey, data)
+}
+
+func sessionKey(bucket, key, uploadID string) string {
+	return fmt.Sprintf("multi_parts/%s/%s/%s", bucket, key, uploadID)
 }
