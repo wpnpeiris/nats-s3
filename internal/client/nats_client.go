@@ -8,6 +8,11 @@ import (
 	"github.com/nats-io/nuid"
 )
 
+const (
+	MultiPartSessionStoreName = "multi_part_session"
+	MultiPartTempStoreName    = "multi_part_temp"
+)
+
 // Client wraps a NATS connection and metadata used by gateway components.
 type Client struct {
 	id   string
