@@ -82,6 +82,7 @@ func (m *MultiPartStore) saveUploadMeta(meta UploadMeta, revision uint64) error 
 		return err
 	}
 	key := sessionKey(meta.Bucket, meta.Key, meta.UploadID)
+	// FIXME: Retries on revision conflicts to synchronize concurrent updates across goroutines/processes.
 	_, err = m.SessionStore.Update(key, data, revision)
 	if err != nil {
 		log.Printf("Error at saveUploadMeta when SessionStore.Update(): %v\n", err)
