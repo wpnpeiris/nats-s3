@@ -156,13 +156,6 @@ func (s *S3Gateway) RegisterRoutes(router *mux.Router) {
 	addBucketSubresource(r, http.MethodDelete, "intelligent-tiering", s.iam.Auth(s.notImplemented))
 	addBucketSubresource(r, http.MethodPost, "delete", s.iam.Auth(s.notImplemented)) // Multi-object delete
 
-	// Object root
-	r.Methods(http.MethodPut).Path("/{bucket}/{key:.*}").HandlerFunc(s.iam.Auth(s.Upload))             // PutObject / CopyObject
-	r.Methods(http.MethodGet).Path("/{bucket}/{key:.*}").HandlerFunc(s.iam.Auth(s.Download))           // GetObject / SelectObjectContent
-	r.Methods(http.MethodHead).Path("/{bucket}/{key:.*}").HandlerFunc(s.iam.Auth(s.HeadObject))        // HeadObject
-	r.Methods(http.MethodDelete).Path("/{bucket}/{key:.*}").HandlerFunc(s.iam.Auth(s.DeleteObject))    // DeleteObject
-	r.Methods(http.MethodOptions).Path("/{bucket}/{key:.*}").HandlerFunc(s.iam.Auth(s.notImplemented)) // CORS preflight
-
 	// Object sub-resources
 	addObjectSubresource(r, http.MethodGet, "acl", s.iam.Auth(s.notImplemented))
 	addObjectSubresource(r, http.MethodPut, "acl", s.iam.Auth(s.notImplemented))
@@ -180,10 +173,17 @@ func (s *S3Gateway) RegisterRoutes(router *mux.Router) {
 	// Multipart upload operations on object
 	addObjectSubresource(r, http.MethodPost, "uploads", s.iam.Auth(s.InitiateMultipartUpload)) // Initiate multipart upload
 	// Upload part, Get part, Complete, Abort (all matched by uploadId presence)
-	r.Methods(http.MethodPut).Path("/{bucket}/{key:.*}").Queries("uploadId", "{uploadId}").HandlerFunc(s.iam.Auth(s.notImplemented))    // UploadPart
+	r.Methods(http.MethodPut).Path("/{bucket}/{key:.*}").Queries("uploadId", "{uploadId}").HandlerFunc(s.iam.Auth(s.UploadPart))        // UploadPart
 	r.Methods(http.MethodGet).Path("/{bucket}/{key:.*}").Queries("uploadId", "{uploadId}").HandlerFunc(s.iam.Auth(s.notImplemented))    // GetObject (by part?) / List parts
 	r.Methods(http.MethodPost).Path("/{bucket}/{key:.*}").Queries("uploadId", "{uploadId}").HandlerFunc(s.iam.Auth(s.notImplemented))   // CompleteMultipartUpload
 	r.Methods(http.MethodDelete).Path("/{bucket}/{key:.*}").Queries("uploadId", "{uploadId}").HandlerFunc(s.iam.Auth(s.notImplemented)) // AbortMultipartUpload
+
+	// Object root
+	r.Methods(http.MethodPut).Path("/{bucket}/{key:.*}").HandlerFunc(s.iam.Auth(s.Upload))             // PutObject / CopyObject
+	r.Methods(http.MethodGet).Path("/{bucket}/{key:.*}").HandlerFunc(s.iam.Auth(s.Download))           // GetObject / SelectObjectContent
+	r.Methods(http.MethodHead).Path("/{bucket}/{key:.*}").HandlerFunc(s.iam.Auth(s.HeadObject))        // HeadObject
+	r.Methods(http.MethodDelete).Path("/{bucket}/{key:.*}").HandlerFunc(s.iam.Auth(s.DeleteObject))    // DeleteObject
+	r.Methods(http.MethodOptions).Path("/{bucket}/{key:.*}").HandlerFunc(s.iam.Auth(s.notImplemented)) // CORS preflight
 }
 
 func (s *S3Gateway) notImplemented(w http.ResponseWriter, _ *http.Request) {
