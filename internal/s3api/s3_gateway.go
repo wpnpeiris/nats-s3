@@ -50,20 +50,31 @@ func createMultipartSessionStore(c *client.Client) *client.MultiPartStore {
 	}
 
 	kv, err := js.KeyValue(client.MultiPartSessionStoreName)
-	if err != nil && errors.Is(err, nats.ErrBucketNotFound) {
-		kv, err = js.CreateKeyValue(&nats.KeyValueConfig{
-			Bucket: client.MultiPartSessionStoreName,
-		})
-		if err != nil {
-			panic("Failed to create to multipart session store when js.CreateKeyValue()")
+	if err != nil {
+		if errors.Is(err, nats.ErrBucketNotFound) {
+			kv, err = js.CreateKeyValue(&nats.KeyValueConfig{
+				Bucket: client.MultiPartSessionStoreName,
+			})
+			if err != nil {
+				panic("Failed to create to multipart session store when js.CreateKeyValue()")
+			}
+		} else {
+			panic("Failed to create to multipart session store when js.KeyValue()")
 		}
 	}
 
 	os, err := js.ObjectStore(client.MultiPartTempStoreName)
 	if err != nil && errors.Is(err, nats.ErrStreamNotFound) {
-		os, err = js.CreateObjectStore(&nats.ObjectStoreConfig{
-			Bucket: client.MultiPartTempStoreName,
-		})
+		if errors.Is(err, nats.ErrStreamNotFound) {
+			os, err = js.CreateObjectStore(&nats.ObjectStoreConfig{
+				Bucket: client.MultiPartTempStoreName,
+			})
+			if err != nil {
+				panic("Failed to create to multipart temp store when js.CreateObjectStore()")
+			}
+		} else {
+			panic("Failed to create to multipart temp store when js.ObjectStore()")
+		}
 	}
 
 	return &client.MultiPartStore{
