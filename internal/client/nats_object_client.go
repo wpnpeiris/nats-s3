@@ -76,6 +76,7 @@ func (m *MultiPartStore) createUploadMeta(meta UploadMeta) error {
 	return nil
 }
 
+// saveUploadMeta updates the persisted multipart upload session metadata.
 func (m *MultiPartStore) saveUploadMeta(meta UploadMeta, revision uint64) error {
 	data, err := json.Marshal(meta)
 	if err != nil {
@@ -92,6 +93,18 @@ func (m *MultiPartStore) saveUploadMeta(meta UploadMeta, revision uint64) error 
 	return nil
 }
 
+// deleteUploadMeta delete the persisted multipart upload session metadata.
+func (m *MultiPartStore) deleteUploadMeta(meta UploadMeta) error {
+	key := sessionKey(meta.Bucket, meta.Key, meta.UploadID)
+	err := m.SessionStore.Delete(key)
+	if err != nil {
+		log.Printf("Error at deleteUploadMeta when SessionStore.Delete(): %v\n", err)
+		return err
+	}
+
+	return nil
+}
+
 // createPartUpload streams a part from the provided reader into the temporary
 // Object Store under the given part key and returns the stored object's info.
 func (m *MultiPartStore) createPartUpload(partKey string, dataReader *io.PipeReader) (*nats.ObjectInfo, error) {
@@ -104,25 +117,25 @@ func (m *MultiPartStore) createPartUpload(partKey string, dataReader *io.PipeRea
 	return obj, nil
 }
 
+// getPartUpload return part from the temporary Object Store.
 func (m *MultiPartStore) getPartUpload(partKey string) (nats.ObjectResult, error) {
 	return m.TempPartStore.Get(partKey)
 }
 
-func (m *MultiPartStore) cleanMultipartUpload(meta UploadMeta) error {
+// deletePartUpload delete part from the temporary Object Store.
+func (m *MultiPartStore) deletePartUpload(partKey string) error {
+	return m.TempPartStore.Delete(partKey)
+}
+
+// deleteAllPartUpload delete all parts from the temporary Object Store.
+func (m *MultiPartStore) deleteAllPartUpload(meta UploadMeta) error {
 	for pn := range meta.Parts {
 		key := partKey(meta.Bucket, meta.Key, meta.UploadID, pn)
 		err := m.TempPartStore.Delete(key)
 		if err != nil {
-			log.Printf("Error at cleanMultipartUpload when TempPartStore.Delete(): %v\n", err)
+			log.Printf("Error at deleteAllPartUpload when TempPartStore.Delete(): %v\n", err)
 			return err
 		}
-	}
-
-	sessionKey := sessionKey(meta.Bucket, meta.Key, meta.UploadID)
-	err := m.SessionStore.Delete(sessionKey)
-	if err != nil {
-		log.Printf("Error at cleanMultipartUpload when SessionStore.Delete(): %v\n", err)
-		return err
 	}
 
 	return nil
@@ -407,6 +420,36 @@ func (c *NatsObjectClient) UploadPart(bucket string, key string, uploadID string
 	return etag, nil
 }
 
+func (c *NatsObjectClient) AbortMultipartUpload(bucket string, key string, uploadID string) error {
+	sessionKey := sessionKey(bucket, key, uploadID)
+	sessionData, err := c.MultiPartStore.getUploadMeta(sessionKey)
+	if err != nil {
+		return ErrUploadNotFound
+	}
+
+	var meta UploadMeta
+	if err := json.Unmarshal(sessionData.Value(), &meta); err != nil {
+		log.Printf("Error at UploadPart when json.Unmarshal(): %v\n", err)
+		return err
+	}
+
+	for pn := range meta.Parts {
+		partKey := partKey(bucket, key, uploadID, pn)
+		err := c.MultiPartStore.deletePartUpload(partKey)
+		if err != nil {
+			log.Printf("Error at deletePartUpload when AbortMultipartUpload(): %v\n", err)
+		}
+	}
+
+	err = c.MultiPartStore.deleteUploadMeta(meta)
+	if err != nil {
+		log.Printf("WARN, failed to delete multipart session data: %v\n", err)
+		return err
+	}
+
+	return nil
+}
+
 func (c *NatsObjectClient) CompleteMultipartUpload(bucket string, key string, uploadID string, sortedPartNumbers []int) (string, error) {
 	sessionKey := sessionKey(bucket, key, uploadID)
 	sessionData, err := c.MultiPartStore.getUploadMeta(sessionKey)
@@ -473,9 +516,15 @@ func (c *NatsObjectClient) CompleteMultipartUpload(bucket string, key string, up
 	etagHex := hex.EncodeToString(md5Concat.Sum(nil))
 	finalETag := fmt.Sprintf(`"%s-%d"`, strings.ToLower(etagHex), len(sortedPartNumbers))
 
-	err = c.MultiPartStore.cleanMultipartUpload(meta)
+	err = c.MultiPartStore.deleteAllPartUpload(meta)
 	if err != nil {
 		log.Printf("WARN, failed to clean multipart session/temp data: %v\n", err)
+	}
+
+	err = c.MultiPartStore.deleteUploadMeta(meta)
+	if err != nil {
+		log.Printf("WARN, failed to delete multipart session data: %v\n", err)
+		return "", err
 	}
 
 	return finalETag, nil

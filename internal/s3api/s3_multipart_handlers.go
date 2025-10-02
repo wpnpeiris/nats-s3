@@ -146,6 +146,23 @@ func (s *S3Gateway) CompleteMultipartUpload(w http.ResponseWriter, r *http.Reque
 	WriteXMLResponse(w, r, http.StatusOK, response)
 }
 
+func (s *S3Gateway) AbortMultipartUpload(w http.ResponseWriter, r *http.Request) {
+	bucket := mux.Vars(r)["bucket"]
+	key := mux.Vars(r)["key"]
+	uploadID := r.URL.Query().Get("uploadId")
+	if bucket == "" || key == "" || uploadID == "" {
+		WriteErrorResponse(w, r, ErrNoSuchUpload)
+		return
+	}
+	err := s.client.AbortMultipartUpload(bucket, key, uploadID)
+	if err != nil {
+		WriteErrorResponse(w, r, ErrInternalError)
+		return
+	}
+
+	WriteEmptyResponse(w, r, http.StatusNoContent)
+}
+
 func parsePartNumbers(parts *CompleteMultipartUpload) []int {
 	if parts == nil || len(parts.Parts) == 0 {
 		return nil
