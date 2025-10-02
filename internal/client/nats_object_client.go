@@ -45,8 +45,6 @@ type UploadMeta struct {
 	MinPartSz int64            `json:"min_part_size"`   // default 5MiB
 	MaxParts  int              `json:"max_parts"`       // default 10000
 	Parts     map[int]PartMeta `json:"parts"`
-	Completed bool             `json:"completed"`
-	Aborted   bool             `json:"aborted"`
 }
 
 // MultiPartStore groups storage backends used for multipart uploads.
@@ -386,10 +384,6 @@ func (c *NatsObjectClient) UploadPart(bucket string, key string, uploadID string
 	if err := json.Unmarshal(sessionData.Value(), &meta); err != nil {
 		log.Printf("Error at UploadPart when json.Unmarshal(): %v\n", err)
 		return "", err
-	}
-
-	if meta.Aborted || meta.Completed {
-		return "", ErrUploadCompleted
 	}
 
 	h := md5.New()
