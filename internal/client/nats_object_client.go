@@ -414,6 +414,8 @@ func (c *NatsObjectClient) UploadPart(bucket string, key string, uploadID string
 	return etag, nil
 }
 
+// AbortMultipartUpload aborts an in‑progress multipart upload, deleting any
+// uploaded parts and removing the session metadata.
 func (c *NatsObjectClient) AbortMultipartUpload(bucket string, key string, uploadID string) error {
 	sessionKey := sessionKey(bucket, key, uploadID)
 	sessionData, err := c.MultiPartStore.getUploadMeta(sessionKey)
@@ -444,6 +446,27 @@ func (c *NatsObjectClient) AbortMultipartUpload(bucket string, key string, uploa
 	return nil
 }
 
+// ListParts returns the multipart upload session metadata for the given
+// bucket/key/uploadID, including uploaded parts with sizes and ETags.
+func (c *NatsObjectClient) ListParts(bucket string, key string, uploadID string) (*UploadMeta, error) {
+	sessionKey := sessionKey(bucket, key, uploadID)
+	sessionData, err := c.MultiPartStore.getUploadMeta(sessionKey)
+	if err != nil {
+		return nil, ErrUploadNotFound
+	}
+
+	var meta UploadMeta
+	if err := json.Unmarshal(sessionData.Value(), &meta); err != nil {
+		log.Printf("Error at UploadPart when json.Unmarshal(): %v\n", err)
+		return nil, err
+	}
+
+	return &meta, nil
+}
+
+// CompleteMultipartUpload concatenates the uploaded parts into the final
+// object, computes and returns the multipart ETag, and cleans up temporary
+// parts and session metadata.
 func (c *NatsObjectClient) CompleteMultipartUpload(bucket string, key string, uploadID string, sortedPartNumbers []int) (string, error) {
 	sessionKey := sessionKey(bucket, key, uploadID)
 	sessionData, err := c.MultiPartStore.getUploadMeta(sessionKey)
