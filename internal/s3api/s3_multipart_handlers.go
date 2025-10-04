@@ -181,21 +181,58 @@ func (s *S3Gateway) ListParts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	response := ListPartsResult{
-		Bucket:               aws.String(meta.Bucket),
-		Key:                  aws.String(meta.Key),
-		UploadId:             aws.String(uploadID),
-		MaxParts:             aws.Int64(int64(maxParts)),
-		NextPartNumberMarker: aws.Int64(int64(partNumberMarker)),
-		StorageClass:         aws.String("STANDARD"),
+		Bucket:           aws.String(meta.Bucket),
+		Key:              aws.String(meta.Key),
+		UploadId:         aws.String(uploadID),
+		MaxParts:         aws.Int64(int64(maxParts)),
+		PartNumberMarker: aws.Int64(int64(partNumberMarker)),
+		StorageClass:     aws.String("STANDARD"),
 	}
-	for _, part := range meta.Parts {
-		response.Part = append(response.Part, &s3.Part{
-			PartNumber: aws.Int64(int64(part.Number)),
-			Size:       aws.Int64(int64(part.Size)),
-			ETag:       aws.String(part.ETag),
-		})
-		response.NextPartNumberMarker = aws.Int64(int64(part.Number))
+
+	// Collect and sort part numbers to ensure deterministic ordering.
+	partNumbers := make([]int, 0, len(meta.Parts))
+	for pn := range meta.Parts {
+		partNumbers = append(partNumbers, pn)
 	}
+	sort.Ints(partNumbers)
+
+	// Apply part-number-marker: start strictly after the marker value.
+	start := 0
+	if partNumberMarker > 0 {
+		for i, pn := range partNumbers {
+			if pn > partNumberMarker {
+				start = i
+				break
+			}
+			start = len(partNumbers) // if all <= marker, this will skip all
+		}
+	}
+
+	// Limit by max-parts.
+	end := start + maxParts
+	if end > len(partNumbers) {
+		end = len(partNumbers)
+	}
+
+	// Slice and build response parts.
+	if start < end {
+		for _, pn := range partNumbers[start:end] {
+			p := meta.Parts[pn]
+			response.Part = append(response.Part, &s3.Part{
+				PartNumber: aws.Int64(int64(p.Number)),
+				Size:       aws.Int64(int64(p.Size)),
+				ETag:       aws.String(p.ETag),
+			})
+			response.NextPartNumberMarker = aws.Int64(int64(p.Number))
+		}
+	} else {
+		// No parts in this page; keep marker as provided.
+		response.NextPartNumberMarker = aws.Int64(int64(partNumberMarker))
+	}
+
+	// Indicate if there are more parts beyond this page.
+	isTruncated := end < len(partNumbers)
+	response.IsTruncated = aws.Bool(isTruncated)
 
 	WriteXMLResponse(w, r, http.StatusOK, response)
 }
