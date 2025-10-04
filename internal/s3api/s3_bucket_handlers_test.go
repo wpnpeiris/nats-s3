@@ -28,7 +28,8 @@ func TestListBuckets(t *testing.T) {
 	gw := NewS3Gateway(s.ClientURL(), "", "")
 
 	// Create a couple of buckets so ListBuckets has content.
-	nc := gw.client.Client.NATS()
+	natsEndpoint := s.Addr().String()
+	nc, err := nats.Connect(natsEndpoint)
 	// Avoid production panic handler during test shutdown.
 	nc.SetClosedHandler(func(_ *nats.Conn) {})
 	defer nc.Close()
@@ -94,7 +95,8 @@ func TestCreateBucket(t *testing.T) {
 	}
 
 	// Verify bucket exists in NATS by opening ObjectStore
-	nc := gw.client.Client.NATS()
+	natsEndpoint := s.Addr().String()
+	nc, err := nats.Connect(natsEndpoint)
 	nc.SetClosedHandler(func(_ *nats.Conn) {})
 	defer nc.Close()
 	js, err := nc.JetStream()
