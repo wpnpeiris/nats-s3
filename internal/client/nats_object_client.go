@@ -444,6 +444,22 @@ func (c *NatsObjectClient) AbortMultipartUpload(bucket string, key string, uploa
 	return nil
 }
 
+func (c *NatsObjectClient) ListParts(bucket string, key string, uploadID string) (*UploadMeta, error) {
+	sessionKey := sessionKey(bucket, key, uploadID)
+	sessionData, err := c.MultiPartStore.getUploadMeta(sessionKey)
+	if err != nil {
+		return nil, ErrUploadNotFound
+	}
+
+	var meta UploadMeta
+	if err := json.Unmarshal(sessionData.Value(), &meta); err != nil {
+		log.Printf("Error at UploadPart when json.Unmarshal(): %v\n", err)
+		return nil, err
+	}
+
+	return &meta, nil
+}
+
 func (c *NatsObjectClient) CompleteMultipartUpload(bucket string, key string, uploadID string, sortedPartNumbers []int) (string, error) {
 	sessionKey := sessionKey(bucket, key, uploadID)
 	sessionData, err := c.MultiPartStore.getUploadMeta(sessionKey)

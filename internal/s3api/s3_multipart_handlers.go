@@ -16,6 +16,11 @@ import (
 	"github.com/wpnpeiris/nats-s3/internal/client"
 )
 
+const (
+	maxUploadsList = 10000 // Max number of uploads in a listUploadsResponse.
+	maxPartsList   = 10000 // Max number of parts in a listPartsResponse.
+)
+
 // InitiateMultipartUploadResult wraps the minimal fields returned by S3
 // when initiating a multipart upload. It embeds the AWS SDK's response type
 // to preserve field names and XML shape.
@@ -31,6 +36,21 @@ type CompleteMultipartUpload struct {
 type CompletedPart struct {
 	ETag       string
 	PartNumber int
+}
+
+type ListPartsResult struct {
+	XMLName xml.Name `xml:"http://s3.amazonaws.com/doc/2006-03-01/ ListPartsResult"`
+
+	// copied from s3.ListPartsOutput, the Parts is not converting to <Part></Part>
+	Bucket               *string    `type:"string"`
+	IsTruncated          *bool      `type:"boolean"`
+	Key                  *string    `min:"1" type:"string"`
+	MaxParts             *int64     `type:"integer"`
+	NextPartNumberMarker *int64     `type:"integer"`
+	PartNumberMarker     *int64     `type:"integer"`
+	Part                 []*s3.Part `locationName:"Part" type:"list" flattened:"true"`
+	StorageClass         *string    `type:"string" enum:"StorageClass"`
+	UploadId             *string    `type:"string"`
 }
 
 type CompleteMultipartUploadResult struct {
@@ -97,7 +117,7 @@ func (s *S3Gateway) UploadPart(w http.ResponseWriter, r *http.Request) {
 
 	pnStr := r.URL.Query().Get("partNumber")
 	partNum, _ := strconv.Atoi(pnStr)
-	if partNum < 1 || partNum > 10000 {
+	if partNum < 1 || partNum > maxUploadsList {
 		WriteErrorResponse(w, r, ErrInvalidPart)
 		return
 	}
@@ -161,6 +181,60 @@ func (s *S3Gateway) AbortMultipartUpload(w http.ResponseWriter, r *http.Request)
 	}
 
 	WriteEmptyResponse(w, r, http.StatusNoContent)
+}
+
+func (s *S3Gateway) ListParts(w http.ResponseWriter, r *http.Request) {
+	bucket := mux.Vars(r)["bucket"]
+	key := mux.Vars(r)["key"]
+	uploadID := r.URL.Query().Get("uploadId")
+	partNumberMarker, _ := strconv.Atoi(r.URL.Query().Get("part-number-marker"))
+	if bucket == "" || key == "" || uploadID == "" {
+		WriteErrorResponse(w, r, ErrNoSuchUpload)
+		return
+	}
+	if partNumberMarker < 0 {
+		WriteErrorResponse(w, r, ErrInvalidPartNumberMarker)
+		return
+	}
+
+	var maxParts int
+	if r.URL.Query().Get("max-parts") != "" {
+		maxParts, _ = strconv.Atoi(r.URL.Query().Get("max-parts"))
+	} else {
+		maxParts = maxPartsList
+	}
+	if maxParts < 0 {
+		WriteErrorResponse(w, r, ErrInvalidMaxParts)
+		return
+	}
+
+	meta, err := s.client.ListParts(bucket, key, uploadID)
+	if err != nil {
+		if errors.Is(err, client.ErrUploadNotFound) || errors.Is(err, client.ErrUploadCompleted) {
+			WriteErrorResponse(w, r, ErrNoSuchUpload)
+			return
+		}
+		WriteErrorResponse(w, r, ErrInternalError)
+		return
+	}
+	response := ListPartsResult{
+		Bucket:               aws.String(meta.Bucket),
+		Key:                  aws.String(meta.Key),
+		UploadId:             aws.String(uploadID),
+		MaxParts:             aws.Int64(int64(maxParts)),
+		NextPartNumberMarker: aws.Int64(int64(partNumberMarker)),
+		StorageClass:         aws.String("STANDARD"),
+	}
+	for _, part := range meta.Parts {
+		response.Part = append(response.Part, &s3.Part{
+			PartNumber: aws.Int64(int64(part.Number)),
+			Size:       aws.Int64(int64(part.Size)),
+			ETag:       aws.String(part.ETag),
+		})
+		response.NextPartNumberMarker = aws.Int64(int64(part.Number))
+	}
+
+	WriteXMLResponse(w, r, http.StatusOK, response)
 }
 
 func parsePartNumbers(parts *CompleteMultipartUpload) []int {
