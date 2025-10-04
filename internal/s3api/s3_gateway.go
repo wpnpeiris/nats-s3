@@ -3,6 +3,7 @@ package s3api
 import (
 	"errors"
 	"net/http"
+	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/nats-io/nats.go"
@@ -13,8 +14,9 @@ import (
 // implemented operations to NATS JetStream-backed object storage.
 // Unimplemented endpoints intentionally respond with HTTP 501 Not Implemented.
 type S3Gateway struct {
-	client *client.NatsObjectClient
-	iam    *IdentityAccessManagement
+	client  *client.NatsObjectClient
+	iam     *IdentityAccessManagement
+	started time.Time
 }
 
 // NewS3Gateway creates a gateway instance and establishes a connection to
@@ -34,11 +36,9 @@ func NewS3Gateway(natsServers string, natsUser string, natsPassword string) *S3G
 	}
 	mps := createMultipartSessionStore(natsClient)
 	return &S3Gateway{
-		client: &client.NatsObjectClient{
-			Client:         natsClient,
-			MultiPartStore: mps,
-		},
-		iam: NewIdentityAccessManagement(credential),
+		client:  client.NewNatsObjectClient(natsClient, mps),
+		iam:     NewIdentityAccessManagement(credential),
+		started: time.Now().UTC(),
 	}
 }
 
@@ -86,6 +86,11 @@ func createMultipartSessionStore(c *client.Client) *client.MultiPartStore {
 // RegisterRoutes wires the S3 REST API endpoints onto the provided mux router.
 func (s *S3Gateway) RegisterRoutes(router *mux.Router) {
 	r := router.PathPrefix("/").Subrouter()
+
+	// Unauthenticated monitoring endpoints
+	r.Methods(http.MethodGet).Path("/healthz").HandlerFunc(s.Healthz)
+	r.Methods(http.MethodGet).Path("/metrics").HandlerFunc(s.Metrics)
+	r.Methods(http.MethodGet).Path("/stats").HandlerFunc(s.Stats)
 
 	r.Methods(http.MethodOptions).HandlerFunc(s.iam.Auth(s.SetOptionHeaders))
 
@@ -188,6 +193,14 @@ func (s *S3Gateway) RegisterRoutes(router *mux.Router) {
 
 func (s *S3Gateway) notImplemented(w http.ResponseWriter, _ *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// gatewayStats represents a minimal JSON payload for /stats.
+type gatewayStats struct {
+	UptimeSeconds      int64 `json:"uptime_seconds"`
+	NATSConnected      bool  `json:"nats_connected"`
+	NATSReconnects     int   `json:"nats_reconnects"`
+	ObjectStoreBuckets int   `json:"objectstore_buckets"`
 }
 
 // addBucketSubresource registers a bucket-level subresource path using a

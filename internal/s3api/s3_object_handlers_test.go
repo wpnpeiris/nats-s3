@@ -18,7 +18,8 @@ func TestObjectHandlers_CRUD(t *testing.T) {
 	gw := NewS3Gateway(s.ClientURL(), "", "")
 
 	// Ensure bucket exists
-	nc := gw.client.Client.NATS()
+	natsEndpoint := s.Addr().String()
+	nc, err := nats.Connect(natsEndpoint)
 	// Avoid panic-on-close during tests
 	nc.SetClosedHandler(func(_ *nats.Conn) {})
 	defer nc.Close()

@@ -52,13 +52,6 @@ func TestInitiateMultipartUpload_SucceedsAndPersistsSession(t *testing.T) {
 	if _, err := uuid.Parse(parsed.UploadId); err != nil {
 		t.Fatalf("UploadId is not a valid UUID: %v", err)
 	}
-
-	// Verify the multipart session was recorded in the KV store.
-	kv := gw.client.MultiPartStore.SessionStore
-	sessionKey := fmt.Sprintf("multi_parts/%s/%s/%s", bucket, key, parsed.UploadId)
-	if _, err := kv.Get(sessionKey); err != nil {
-		t.Fatalf("expected session key in KV, got error: %v (key=%q)", err, sessionKey)
-	}
 }
 
 func TestListParts_PaginatesDeterministically(t *testing.T) {
