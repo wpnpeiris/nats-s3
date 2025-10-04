@@ -21,50 +21,6 @@ const (
 	maxPartsList   = 10000 // Max number of parts in a listPartsResponse.
 )
 
-// InitiateMultipartUploadResult wraps the minimal fields returned by S3
-// when initiating a multipart upload. It embeds the AWS SDK's response type
-// to preserve field names and XML shape.
-type InitiateMultipartUploadResult struct {
-	XMLName xml.Name `xml:"http://s3.amazonaws.com/doc/2006-03-01/ InitiateMultipartUploadResult"`
-	s3.CreateMultipartUploadOutput
-}
-
-type CompleteMultipartUpload struct {
-	Parts []CompletedPart `xml:"Part"`
-}
-
-type CompletedPart struct {
-	ETag       string
-	PartNumber int
-}
-
-type ListPartsResult struct {
-	XMLName xml.Name `xml:"http://s3.amazonaws.com/doc/2006-03-01/ ListPartsResult"`
-
-	// copied from s3.ListPartsOutput, the Parts is not converting to <Part></Part>
-	Bucket               *string    `type:"string"`
-	IsTruncated          *bool      `type:"boolean"`
-	Key                  *string    `min:"1" type:"string"`
-	MaxParts             *int64     `type:"integer"`
-	NextPartNumberMarker *int64     `type:"integer"`
-	PartNumberMarker     *int64     `type:"integer"`
-	Part                 []*s3.Part `locationName:"Part" type:"list" flattened:"true"`
-	StorageClass         *string    `type:"string" enum:"StorageClass"`
-	UploadId             *string    `type:"string"`
-}
-
-type CompleteMultipartUploadResult struct {
-	XMLName  xml.Name `xml:"http://s3.amazonaws.com/doc/2006-03-01/ CompleteMultipartUploadResult"`
-	Location *string  `xml:"Location,omitempty"`
-	Bucket   *string  `xml:"Bucket,omitempty"`
-	Key      *string  `xml:"Key,omitempty"`
-	ETag     *string  `xml:"ETag,omitempty"`
-	// VersionId is NOT included in XML body - it should only be in x-amz-version-id HTTP header
-
-	// Store the VersionId internally for setting HTTP header, but don't marshal to XML
-	VersionId *string `xml:"-"`
-}
-
 // InitiateMultipartUpload creates a new multipart upload session for the given
 // bucket and object key, returning UploadId/Bucket/Key in S3-compatible XML.
 func (s *S3Gateway) InitiateMultipartUpload(w http.ResponseWriter, r *http.Request) {
@@ -136,6 +92,9 @@ func (s *S3Gateway) UploadPart(w http.ResponseWriter, r *http.Request) {
 	WriteEmptyResponse(w, r, http.StatusOK)
 }
 
+// CompleteMultipartUpload finalizes a multipart upload by parsing the client
+// provided part list, delegating composition to the storage client, and
+// returning an S3-compatible XML response with the final ETag.
 func (s *S3Gateway) CompleteMultipartUpload(w http.ResponseWriter, r *http.Request) {
 	bucket := mux.Vars(r)["bucket"]
 	key := mux.Vars(r)["key"]
@@ -166,6 +125,8 @@ func (s *S3Gateway) CompleteMultipartUpload(w http.ResponseWriter, r *http.Reque
 	WriteXMLResponse(w, r, http.StatusOK, response)
 }
 
+// AbortMultipartUpload aborts a multipart upload, removing uploaded parts and
+// session metadata, and responds with 204 No Content on success.
 func (s *S3Gateway) AbortMultipartUpload(w http.ResponseWriter, r *http.Request) {
 	bucket := mux.Vars(r)["bucket"]
 	key := mux.Vars(r)["key"]
@@ -183,6 +144,8 @@ func (s *S3Gateway) AbortMultipartUpload(w http.ResponseWriter, r *http.Request)
 	WriteEmptyResponse(w, r, http.StatusNoContent)
 }
 
+// ListParts lists uploaded parts for a multipart upload. Supports pagination via
+// part-number-marker and max-parts query parameters.
 func (s *S3Gateway) ListParts(w http.ResponseWriter, r *http.Request) {
 	bucket := mux.Vars(r)["bucket"]
 	key := mux.Vars(r)["key"]

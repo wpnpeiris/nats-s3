@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"encoding/xml"
 	"fmt"
+	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/gorilla/mux"
 	"log"
 	"net/http"
@@ -50,6 +51,8 @@ func NewRESTErrorResponse(err APIError, resource string, bucket, object string) 
 	}
 }
 
+// SetEtag sets the ETag response header. If the provided value is unquoted,
+// quotes are added to match S3 behavior.
 func SetEtag(w http.ResponseWriter, etag string) {
 	if etag != "" {
 		if strings.HasPrefix(etag, "\"") {
@@ -58,6 +61,50 @@ func SetEtag(w http.ResponseWriter, etag string) {
 			w.Header()["ETag"] = []string{"\"" + etag + "\""}
 		}
 	}
+}
+
+// InitiateMultipartUploadResult wraps the minimal fields returned by S3
+// when initiating a multipart upload. It embeds the AWS SDK's response type
+// to preserve field names and XML shape.
+type InitiateMultipartUploadResult struct {
+	XMLName xml.Name `xml:"http://s3.amazonaws.com/doc/2006-03-01/ InitiateMultipartUploadResult"`
+	s3.CreateMultipartUploadOutput
+}
+
+type CompleteMultipartUpload struct {
+	Parts []CompletedPart `xml:"Part"`
+}
+
+type CompletedPart struct {
+	ETag       string
+	PartNumber int
+}
+
+type ListPartsResult struct {
+	XMLName xml.Name `xml:"http://s3.amazonaws.com/doc/2006-03-01/ ListPartsResult"`
+
+	// copied from s3.ListPartsOutput, the Parts is not converting to <Part></Part>
+	Bucket               *string    `type:"string"`
+	IsTruncated          *bool      `type:"boolean"`
+	Key                  *string    `min:"1" type:"string"`
+	MaxParts             *int64     `type:"integer"`
+	NextPartNumberMarker *int64     `type:"integer"`
+	PartNumberMarker     *int64     `type:"integer"`
+	Part                 []*s3.Part `locationName:"Part" type:"list" flattened:"true"`
+	StorageClass         *string    `type:"string" enum:"StorageClass"`
+	UploadId             *string    `type:"string"`
+}
+
+type CompleteMultipartUploadResult struct {
+	XMLName  xml.Name `xml:"http://s3.amazonaws.com/doc/2006-03-01/ CompleteMultipartUploadResult"`
+	Location *string  `xml:"Location,omitempty"`
+	Bucket   *string  `xml:"Bucket,omitempty"`
+	Key      *string  `xml:"Key,omitempty"`
+	ETag     *string  `xml:"ETag,omitempty"`
+	// VersionId is NOT included in XML body - it should only be in x-amz-version-id HTTP header
+
+	// Store the VersionId internally for setting HTTP header, but don't marshal to XML
+	VersionId *string `xml:"-"`
 }
 
 // WriteXMLResponse encodes the response as XML and writes it with the given

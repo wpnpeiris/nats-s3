@@ -41,6 +41,8 @@ func (s *S3Gateway) CreateBucket(w http.ResponseWriter, r *http.Request) {
 	WriteXMLResponse(w, r, http.StatusOK, response)
 }
 
+// DeleteBucket deletes the specified bucket and responds with 204 No Content.
+// Returns NoSuchBucket if the bucket does not exist.
 func (s *S3Gateway) DeleteBucket(w http.ResponseWriter, r *http.Request) {
 	bucket := mux.Vars(r)["bucket"]
 	err := s.client.DeleteBucket(bucket)
