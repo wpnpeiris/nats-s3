@@ -1,6 +1,6 @@
 # Roadmap
 
-_Last updated: 2025-09-11_
+_Last updated: 2025-10-04_
 
 ## Vision & Goals
 
@@ -16,6 +16,8 @@ S3 workflows with NATS Object Store.
 |---|---|----------------------------------------------------------------------------------|
 | Basic S3 operations (list buckets, list objects, put, get, delete object) | ✅ Implemented | Works with AWS CLI.                                                              |
 | SigV4 authentication (header & presigned URLs) | ✅ Implemented | Single credential pair compaired with NATS server username/password credentials. |
+| Multipart uploads (initiate/upload part/list parts/complete/abort) | ✅ Implemented | Follows S3 semantics incl. ETag and part pagination. |
+| Basic monitoring endpoints (/healthz, /metrics, /stats) | ✅ Implemented | Prometheus text metrics and JSON stats. |
 
 
 ## Milestones & Phases
@@ -23,15 +25,15 @@ S3 workflows with NATS Object Store.
 Below are planned features grouped in phases. Priorities may changed based on user feedback or community contributions.
 
 ## v0.1 - MVP
-- S3 basics: ListBuckets, ListObjects, GetObject, HeadObject, PutObject, DeleteObject
-- S3-compatible headers (ETag, Last-Modified RFC1123, Content-Length)
-- Configurable auth (NATS creds)
-- Docker image and simple CI
+- ✅ S3 basics: ListBuckets, ListObjects, GetObject, HeadObject, PutObject, DeleteObject
+- ✅ S3-compatible headers (ETag, Last-Modified RFC1123, Content-Length)
+- ✅ Configurable auth (NATS creds)
+- ✅ Docker image and simple CI
 
-## v0.2 – Multipart support and other improvements
-- Improve object listing performance (paging, pagination)
-- Add basic metrics / endpoints for monitoring (e.g. HTTP endpoint to reflect health, stats)
-- Add more examples / sample code for SDKs (Go, Python etc.)
+## v0.2 – Multipart support and other improvements (Completed)
+- ✅ Multipart upload support (initiate, upload part, list parts, complete, abort)
+- ✅ Improve listing behavior for multipart parts (pagination, markers)
+- ✅ Add basic metrics / endpoints for monitoring (/healthz, /metrics, /stats)
 
 ## v0.3 – Credential Store, Policies, and robustness
 - Credential store for auth (first-class)
@@ -42,6 +44,7 @@ Below are planned features grouped in phases. Priorities may changed based on us
   - Auth paths: header/presigned, allowed/denied policy cases
 
 ## v0.4 – Compatibility
+- Add more examples / sample code for SDKs (Go, Python etc.)
 - Helm chart and K8s manifests
 - Detailed metrics & dashboards (Prometheus, Grafana)
 - Investigate non-S3 API compatibility / S3 API newer features (e.g. AWS S3 Select, event notifications)
