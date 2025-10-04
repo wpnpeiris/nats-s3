@@ -42,7 +42,7 @@ func TestMetrics_ExposesBasicMetrics(t *testing.T) {
 		t.Fatalf("expected 200 from /metrics, got %d", rr.Code)
 	}
 	body := rr.Body.String()
-	if !strings.Contains(body, "nats_connection_status") || !strings.Contains(body, "gateway_uptime_seconds") {
+	if !strings.Contains(body, "gateway_uptime_seconds") {
 		t.Fatalf("/metrics missing expected metrics, body=%s", body)
 	}
 }

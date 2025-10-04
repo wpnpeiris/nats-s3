@@ -20,32 +20,17 @@ func (s *S3Gateway) Healthz(w http.ResponseWriter, r *http.Request) {
 
 // Metrics exposes a tiny Prometheus text-format metrics set for basic monitoring.
 func (s *S3Gateway) Metrics(w http.ResponseWriter, _ *http.Request) {
-	connected := 0.0
-	reconnects := 0.0
-	if s.client.IsConnected() {
-		connected = 1.0
-		st := s.client.Stats()
-		reconnects = float64(st.Reconnects)
-	}
-
-	// Count object stores
-	bl, err := s.client.ListBuckets()
-	if err != nil {
-		log.Printf("Error at ListBuckets when s.client.ListBuckets(): %v\n", err)
-	}
-	buckets := len(bl)
+	_, reconnects := s.countReconnects()
+	buckets := s.countBuckets()
 
 	uptime := time.Since(s.started).Seconds()
 
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4")
 	// Minimal exposition without labels
 	_, _ = w.Write([]byte(
-		"# HELP nats_connection_status 1 if connected, else 0\n" +
-			"# TYPE nats_connection_status gauge\n" +
-			fmtFloatMetric("nats_connection_status", connected) +
-			"# HELP nats_reconnects_total Number of reconnects\n" +
+		"# HELP nats_reconnects_total Number of reconnects\n" +
 			"# TYPE nats_reconnects_total counter\n" +
-			fmtFloatMetric("nats_reconnects_total", reconnects) +
+			fmtFloatMetric("nats_reconnects_total", float64(reconnects)) +
 			"# HELP gateway_uptime_seconds Gateway uptime in seconds\n" +
 			"# TYPE gateway_uptime_seconds counter\n" +
 			fmtFloatMetric("gateway_uptime_seconds", uptime) +
@@ -57,20 +42,8 @@ func (s *S3Gateway) Metrics(w http.ResponseWriter, _ *http.Request) {
 
 // Stats returns a small JSON with uptime, NATS status, reconnect count, and bucket count.
 func (s *S3Gateway) Stats(w http.ResponseWriter, r *http.Request) {
-	connected := false
-	reconnects := 0
-	if s.client.IsConnected() {
-		connected = true
-		st := s.client.Stats()
-		reconnects = int(st.Reconnects)
-	}
-
-	// Count object stores
-	bl, err := s.client.ListBuckets()
-	if err != nil {
-		log.Printf("Error at ListBuckets when s.client.ListBuckets(): %v\n", err)
-	}
-	buckets := len(bl)
+	connected, reconnects := s.countReconnects()
+	buckets := s.countBuckets()
 
 	payload := gatewayStats{
 		UptimeSeconds:      int64(time.Since(s.started).Seconds()),
@@ -86,4 +59,30 @@ func (s *S3Gateway) Stats(w http.ResponseWriter, r *http.Request) {
 // fmtFloatMetric renders a single-sample metric line with a float value.
 func fmtFloatMetric(name string, val float64) string {
 	return name + " " + strconv.FormatFloat(val, 'f', -1, 64) + "\n"
+}
+
+// countBuckets return number of buckets
+func (s *S3Gateway) countBuckets() int {
+	buckets := 0
+	ch, err := s.client.ListBuckets()
+	if err != nil {
+		log.Printf("Error at ListBuckets when s.client.ListBuckets(): %v\n", err)
+	} else {
+		for range ch {
+			buckets++
+		}
+	}
+	return buckets
+}
+
+// countConnects returns number reconnects
+func (s *S3Gateway) countReconnects() (bool, int) {
+	connected := false
+	reconnects := 0
+	if s.client.IsConnected() {
+		connected = true
+		st := s.client.Stats()
+		reconnects = int(st.Reconnects)
+	}
+	return connected, reconnects
 }
