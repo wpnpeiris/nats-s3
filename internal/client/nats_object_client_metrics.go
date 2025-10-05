@@ -29,6 +29,7 @@ type MetricCollector struct {
 
 func NewMetricCollector(logger log.Logger, client *NatsObjectClient) *MetricCollector {
 	return &MetricCollector{
+		logger: logger,
 		client: client,
 
 		totalBucketsDesc: prometheus.NewDesc(
