@@ -2,6 +2,7 @@ package s3api
 
 import (
 	"encoding/json"
+	"github.com/wpnpeiris/nats-s3/internal/logging"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -13,7 +14,8 @@ func TestHealthz_OK(t *testing.T) {
 	s := startJSServer(t)
 	defer s.Shutdown()
 
-	gw := NewS3Gateway(s.ClientURL(), "", "")
+	logger := logging.NewLogger(logging.Config{Level: "debug"})
+	gw := NewS3Gateway(logger, s.ClientURL(), "", "")
 	r := mux.NewRouter()
 	gw.RegisterRoutes(r)
 
@@ -30,7 +32,8 @@ func TestMetrics_ExposesBasicMetrics(t *testing.T) {
 	s := startJSServer(t)
 	defer s.Shutdown()
 
-	gw := NewS3Gateway(s.ClientURL(), "", "")
+	logger := logging.NewLogger(logging.Config{Level: "debug"})
+	gw := NewS3Gateway(logger, s.ClientURL(), "", "")
 	r := mux.NewRouter()
 	gw.RegisterRoutes(r)
 
@@ -51,7 +54,8 @@ func TestStats_JSONPayload(t *testing.T) {
 	s := startJSServer(t)
 	defer s.Shutdown()
 
-	gw := NewS3Gateway(s.ClientURL(), "", "")
+	logger := logging.NewLogger(logging.Config{Level: "debug"})
+	gw := NewS3Gateway(logger, s.ClientURL(), "", "")
 	r := mux.NewRouter()
 	gw.RegisterRoutes(r)
 

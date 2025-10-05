@@ -2,10 +2,11 @@ package main
 
 import (
 	"flag"
-	"log"
-
+	"fmt"
 	"github.com/nats-io/nats.go"
+	"github.com/wpnpeiris/nats-s3/internal/logging"
 	"github.com/wpnpeiris/nats-s3/internal/server"
+	"os"
 )
 
 // Version is set at build time via -ldflags.
@@ -22,9 +23,11 @@ func main() {
 		natsServers  string
 		natsUser     string
 		natsPassword string
+		logFormat    string
+		logLevel     string
 	)
 	flag.Usage = func() {
-		log.Printf("Usage: nats-s3 [options...]\n\n")
+		fmt.Printf("Usage: nats-s3 [options...]\n\n")
 		flag.PrintDefaults()
 	}
 
@@ -32,13 +35,20 @@ func main() {
 	flag.StringVar(&natsServers, "natsServers", nats.DefaultURL, "List of NATS Servers to connect")
 	flag.StringVar(&natsUser, "natsUser", "", "Nats server user name")
 	flag.StringVar(&natsPassword, "natsPassword", "", "Nats server password")
+	flag.StringVar(&logFormat, "log.format", "logfmt", "log output format: logfmt or json")
+	flag.StringVar(&logLevel, "log.level", "info", "log level: debug, info, warn, error")
 	flag.Parse()
 
-	log.Printf("Starting NATS S3 server... version=%s", Version)
+	logger := logging.NewLogger(logging.Config{
+		Format: logFormat,
+		Level:  logLevel,
+	})
 
-	gateway := server.NewGatewayServer(natsServers, natsUser, natsPassword)
+	logging.Info(logger, "mgs", fmt.Sprintf("Starting NATS S3 server... version=%s", Version))
+	gateway := server.NewGatewayServer(logger, natsServers, natsUser, natsPassword)
 	err := gateway.ListenAndServe(serverListen)
 	if err != nil {
-		log.Fatal(err)
+		logging.Error(logger, "msg", "Failure starting NATS S3 server", "err", err)
+		os.Exit(1)
 	}
 }

@@ -2,6 +2,7 @@ package s3api
 
 import (
 	"encoding/xml"
+	"github.com/wpnpeiris/nats-s3/internal/logging"
 	"io"
 	"net/http/httptest"
 	"strings"
@@ -15,7 +16,8 @@ func TestObjectHandlers_CRUD(t *testing.T) {
 	s := startJSServer(t)
 	defer s.Shutdown()
 
-	gw := NewS3Gateway(s.ClientURL(), "", "")
+	logger := logging.NewLogger(logging.Config{Level: "debug"})
+	gw := NewS3Gateway(logger, s.ClientURL(), "", "")
 
 	// Ensure bucket exists
 	natsEndpoint := s.Addr().String()
