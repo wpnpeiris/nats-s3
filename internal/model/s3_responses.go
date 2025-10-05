@@ -2,7 +2,7 @@
  * The following code is mostly copied from seaweedfs implementation.
  */
 
-package s3api
+package model
 
 import (
 	"bytes"

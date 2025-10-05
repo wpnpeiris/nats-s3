@@ -1,6 +1,7 @@
 package s3api
 
 import (
+	"github.com/wpnpeiris/nats-s3/internal/model"
 	"net/http"
 )
 
@@ -12,5 +13,5 @@ func (s *S3Gateway) SetOptionHeaders(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Methods", "*")
 	w.Header().Set("Access-Control-Allow-Headers", "*")
 
-	WriteEmptyResponse(w, r, http.StatusOK)
+	model.WriteEmptyResponse(w, r, http.StatusOK)
 }

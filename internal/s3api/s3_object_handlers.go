@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/nats-io/nats.go"
 	"github.com/wpnpeiris/nats-s3/internal/client"
+	"github.com/wpnpeiris/nats-s3/internal/model"
 	"io"
 	"log"
 	"net/http"
@@ -46,15 +47,15 @@ func (s *S3Gateway) ListObjects(w http.ResponseWriter, r *http.Request) {
 	res, err := s.client.ListObjects(bucket)
 	if err != nil {
 		if errors.Is(err, client.ErrBucketNotFound) {
-			WriteErrorResponse(w, r, ErrNoSuchBucket)
+			model.WriteErrorResponse(w, r, model.ErrNoSuchBucket)
 			return
 		}
 		if errors.Is(err, client.ErrObjectNotFound) {
-			WriteEmptyResponse(w, r, http.StatusOK)
+			model.WriteEmptyResponse(w, r, http.StatusOK)
 			return
 		}
 
-		WriteErrorResponse(w, r, ErrInternalError)
+		model.WriteErrorResponse(w, r, model.ErrInternalError)
 		return
 	}
 
@@ -84,7 +85,7 @@ func (s *S3Gateway) ListObjects(w http.ResponseWriter, r *http.Request) {
 	err = xml.NewEncoder(w).Encode(xmlResponse)
 	if err != nil {
 		log.Printf("Error enconding the response, %s", err)
-		WriteErrorResponse(w, r, ErrInternalError)
+		model.WriteErrorResponse(w, r, model.ErrInternalError)
 		return
 	}
 }
@@ -98,14 +99,14 @@ func (s *S3Gateway) Download(w http.ResponseWriter, r *http.Request) {
 	info, data, err := s.client.GetObject(bucket, key)
 	if err != nil {
 		if errors.Is(err, client.ErrBucketNotFound) {
-			WriteErrorResponse(w, r, ErrNoSuchBucket)
+			model.WriteErrorResponse(w, r, model.ErrNoSuchBucket)
 			return
 		}
 		if errors.Is(err, client.ErrObjectNotFound) {
-			WriteErrorResponse(w, r, ErrNoSuchKey)
+			model.WriteErrorResponse(w, r, model.ErrNoSuchKey)
 			return
 		}
-		WriteErrorResponse(w, r, ErrInternalError)
+		model.WriteErrorResponse(w, r, model.ErrInternalError)
 		return
 	}
 
@@ -119,7 +120,7 @@ func (s *S3Gateway) Download(w http.ResponseWriter, r *http.Request) {
 	_, err = w.Write(data)
 	if err != nil {
 		log.Printf("Error writing the response, %s", err)
-		WriteErrorResponse(w, r, ErrInternalError)
+		model.WriteErrorResponse(w, r, model.ErrInternalError)
 		return
 	}
 }
@@ -132,11 +133,11 @@ func (s *S3Gateway) HeadObject(w http.ResponseWriter, r *http.Request) {
 	res, err := s.client.GetObjectInfo(bucket, key)
 	if err != nil {
 		if errors.Is(err, client.ErrBucketNotFound) {
-			WriteErrorResponse(w, r, ErrNoSuchBucket)
+			model.WriteErrorResponse(w, r, model.ErrNoSuchBucket)
 			return
 		}
 		if errors.Is(err, client.ErrObjectNotFound) {
-			WriteErrorResponse(w, r, ErrNoSuchKey)
+			model.WriteErrorResponse(w, r, model.ErrNoSuchKey)
 			return
 		}
 
@@ -210,16 +211,16 @@ func (s *S3Gateway) Upload(w http.ResponseWriter, r *http.Request) {
 	res, err := s.client.PutObject(bucket, key, contentType, meta, body)
 	if err != nil {
 		if errors.Is(err, client.ErrBucketNotFound) {
-			WriteErrorResponse(w, r, ErrNoSuchBucket)
+			model.WriteErrorResponse(w, r, model.ErrNoSuchBucket)
 			return
 		}
-		WriteErrorResponse(w, r, ErrInternalError)
+		model.WriteErrorResponse(w, r, model.ErrInternalError)
 		return
 	}
 	if res.Digest != "" {
 		w.Header().Set("ETag", fmt.Sprintf("\"%s\"", res.Digest))
 	}
-	WriteEmptyResponse(w, r, http.StatusOK)
+	model.WriteEmptyResponse(w, r, http.StatusOK)
 }
 
 // extractContentType returns request Header value of "Content-Type"
@@ -248,16 +249,16 @@ func (s *S3Gateway) DeleteObject(w http.ResponseWriter, r *http.Request) {
 	err := s.client.DeleteObject(bucket, key)
 	if err != nil {
 		if errors.Is(err, client.ErrBucketNotFound) {
-			WriteErrorResponse(w, r, ErrNoSuchBucket)
+			model.WriteErrorResponse(w, r, model.ErrNoSuchBucket)
 			return
 		}
 		if errors.Is(err, client.ErrObjectNotFound) {
-			WriteErrorResponse(w, r, ErrNoSuchKey)
+			model.WriteErrorResponse(w, r, model.ErrNoSuchKey)
 			return
 		}
-		WriteErrorResponse(w, r, ErrInternalError)
+		model.WriteErrorResponse(w, r, model.ErrInternalError)
 		return
 	}
 
-	WriteEmptyResponse(w, r, http.StatusNoContent)
+	model.WriteEmptyResponse(w, r, http.StatusNoContent)
 }

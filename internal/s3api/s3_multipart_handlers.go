@@ -3,6 +3,7 @@ package s3api
 import (
 	"encoding/xml"
 	"errors"
+	"github.com/wpnpeiris/nats-s3/internal/model"
 	"io"
 	"net/http"
 	"sort"
@@ -29,24 +30,24 @@ func (s *S3Gateway) InitiateMultipartUpload(w http.ResponseWriter, r *http.Reque
 	key := mux.Vars(r)["key"]
 
 	if bucket == "" || key == "" {
-		WriteErrorResponse(w, r, ErrInvalidRequest)
+		model.WriteErrorResponse(w, r, model.ErrInvalidRequest)
 		return
 	}
 
 	err := s.client.InitMultipartUpload(bucket, key, uploadID)
 	if err != nil {
-		WriteErrorResponse(w, r, ErrInternalError)
+		model.WriteErrorResponse(w, r, model.ErrInternalError)
 		return
 	}
 
-	response := InitiateMultipartUploadResult{
+	response := model.InitiateMultipartUploadResult{
 		CreateMultipartUploadOutput: s3.CreateMultipartUploadOutput{
 			Bucket:   aws.String(bucket),
 			Key:      objectKey(key),
 			UploadId: aws.String(uploadID),
 		},
 	}
-	WriteXMLResponse(w, r, http.StatusOK, response)
+	model.WriteXMLResponse(w, r, http.StatusOK, response)
 }
 
 // objectKey normalizes a mux-extracted key for response payloads by trimming
@@ -67,29 +68,29 @@ func (s *S3Gateway) UploadPart(w http.ResponseWriter, r *http.Request) {
 	key := mux.Vars(r)["key"]
 	uploadID := r.URL.Query().Get("uploadId")
 	if bucket == "" || key == "" || uploadID == "" {
-		WriteErrorResponse(w, r, ErrNoSuchUpload)
+		model.WriteErrorResponse(w, r, model.ErrNoSuchUpload)
 		return
 	}
 
 	pnStr := r.URL.Query().Get("partNumber")
 	partNum, _ := strconv.Atoi(pnStr)
 	if partNum < 1 || partNum > maxUploadsList {
-		WriteErrorResponse(w, r, ErrInvalidPart)
+		model.WriteErrorResponse(w, r, model.ErrInvalidPart)
 		return
 	}
 
 	etag, err := s.client.UploadPart(bucket, key, uploadID, partNum, r.Body)
 	if err != nil {
 		if errors.Is(err, client.ErrUploadNotFound) || errors.Is(err, client.ErrUploadCompleted) {
-			WriteErrorResponse(w, r, ErrNoSuchUpload)
+			model.WriteErrorResponse(w, r, model.ErrNoSuchUpload)
 			return
 		}
-		WriteErrorResponse(w, r, ErrInternalError)
+		model.WriteErrorResponse(w, r, model.ErrInternalError)
 		return
 	}
 
-	SetEtag(w, etag)
-	WriteEmptyResponse(w, r, http.StatusOK)
+	model.SetEtag(w, etag)
+	model.WriteEmptyResponse(w, r, http.StatusOK)
 }
 
 // CompleteMultipartUpload finalizes a multipart upload by parsing the client
@@ -100,29 +101,29 @@ func (s *S3Gateway) CompleteMultipartUpload(w http.ResponseWriter, r *http.Reque
 	key := mux.Vars(r)["key"]
 	uploadID := r.URL.Query().Get("uploadId")
 	if bucket == "" || key == "" || uploadID == "" {
-		WriteErrorResponse(w, r, ErrNoSuchUpload)
+		model.WriteErrorResponse(w, r, model.ErrNoSuchUpload)
 		return
 	}
 
-	parts := &CompleteMultipartUpload{}
+	parts := &model.CompleteMultipartUpload{}
 	if err := xmlDecoder(r.Body, parts, r.ContentLength); err != nil {
-		WriteErrorResponse(w, r, ErrMalformedXML)
+		model.WriteErrorResponse(w, r, model.ErrMalformedXML)
 		return
 	}
 
 	sortedPartNumbers := parsePartNumbers(parts)
 	etag, err := s.client.CompleteMultipartUpload(bucket, key, uploadID, sortedPartNumbers)
 	if err != nil {
-		WriteErrorResponse(w, r, ErrInternalError)
+		model.WriteErrorResponse(w, r, model.ErrInternalError)
 		return
 	}
 
-	response := CompleteMultipartUploadResult{
+	response := model.CompleteMultipartUploadResult{
 		Bucket: aws.String(bucket),
 		ETag:   aws.String(etag),
 		Key:    objectKey(key),
 	}
-	WriteXMLResponse(w, r, http.StatusOK, response)
+	model.WriteXMLResponse(w, r, http.StatusOK, response)
 }
 
 // AbortMultipartUpload aborts a multipart upload, removing uploaded parts and
@@ -132,16 +133,16 @@ func (s *S3Gateway) AbortMultipartUpload(w http.ResponseWriter, r *http.Request)
 	key := mux.Vars(r)["key"]
 	uploadID := r.URL.Query().Get("uploadId")
 	if bucket == "" || key == "" || uploadID == "" {
-		WriteErrorResponse(w, r, ErrNoSuchUpload)
+		model.WriteErrorResponse(w, r, model.ErrNoSuchUpload)
 		return
 	}
 	err := s.client.AbortMultipartUpload(bucket, key, uploadID)
 	if err != nil {
-		WriteErrorResponse(w, r, ErrInternalError)
+		model.WriteErrorResponse(w, r, model.ErrInternalError)
 		return
 	}
 
-	WriteEmptyResponse(w, r, http.StatusNoContent)
+	model.WriteEmptyResponse(w, r, http.StatusNoContent)
 }
 
 // ListParts lists uploaded parts for a multipart upload. Supports pagination via
@@ -152,11 +153,11 @@ func (s *S3Gateway) ListParts(w http.ResponseWriter, r *http.Request) {
 	uploadID := r.URL.Query().Get("uploadId")
 	partNumberMarker, _ := strconv.Atoi(r.URL.Query().Get("part-number-marker"))
 	if bucket == "" || key == "" || uploadID == "" {
-		WriteErrorResponse(w, r, ErrNoSuchUpload)
+		model.WriteErrorResponse(w, r, model.ErrNoSuchUpload)
 		return
 	}
 	if partNumberMarker < 0 {
-		WriteErrorResponse(w, r, ErrInvalidPartNumberMarker)
+		model.WriteErrorResponse(w, r, model.ErrInvalidPartNumberMarker)
 		return
 	}
 
@@ -167,20 +168,20 @@ func (s *S3Gateway) ListParts(w http.ResponseWriter, r *http.Request) {
 		maxParts = maxPartsList
 	}
 	if maxParts < 0 {
-		WriteErrorResponse(w, r, ErrInvalidMaxParts)
+		model.WriteErrorResponse(w, r, model.ErrInvalidMaxParts)
 		return
 	}
 
 	meta, err := s.client.ListParts(bucket, key, uploadID)
 	if err != nil {
 		if errors.Is(err, client.ErrUploadNotFound) || errors.Is(err, client.ErrUploadCompleted) {
-			WriteErrorResponse(w, r, ErrNoSuchUpload)
+			model.WriteErrorResponse(w, r, model.ErrNoSuchUpload)
 			return
 		}
-		WriteErrorResponse(w, r, ErrInternalError)
+		model.WriteErrorResponse(w, r, model.ErrInternalError)
 		return
 	}
-	response := ListPartsResult{
+	response := model.ListPartsResult{
 		Bucket:           aws.String(meta.Bucket),
 		Key:              aws.String(meta.Key),
 		UploadId:         aws.String(uploadID),
@@ -234,10 +235,10 @@ func (s *S3Gateway) ListParts(w http.ResponseWriter, r *http.Request) {
 	isTruncated := end < len(partNumbers)
 	response.IsTruncated = aws.Bool(isTruncated)
 
-	WriteXMLResponse(w, r, http.StatusOK, response)
+	model.WriteXMLResponse(w, r, http.StatusOK, response)
 }
 
-func parsePartNumbers(parts *CompleteMultipartUpload) []int {
+func parsePartNumbers(parts *model.CompleteMultipartUpload) []int {
 	if parts == nil || len(parts.Parts) == 0 {
 		return nil
 	}
