@@ -6,6 +6,7 @@ import (
 	"github.com/nats-io/nats.go"
 	"github.com/wpnpeiris/nats-s3/internal/logging"
 	"github.com/wpnpeiris/nats-s3/internal/server"
+	"os"
 )
 
 // Version is set at build time via -ldflags.
@@ -48,5 +49,6 @@ func main() {
 	err := gateway.ListenAndServe(serverListen)
 	if err != nil {
 		logging.Error(logger, "msg", "Failure starting NATS S3 server", "err", err)
+		os.Exit(1)
 	}
 }
