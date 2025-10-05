@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/go-kit/log"
 	"github.com/wpnpeiris/nats-s3/internal/logging"
+	"github.com/wpnpeiris/nats-s3/internal/metrics"
 	"net/http"
 	"time"
 
@@ -22,10 +23,11 @@ func NewGatewayServer(logger log.Logger, natsServers string, natsUser string, na
 	return &GatewayServer{logger, s3Gateway}
 }
 
-// ListenAndServe starts the HTTP server and blocks until it exits.
-func (s *GatewayServer) ListenAndServe(endpoint string) error {
+// Start starts the HTTP server and blocks until it exits.
+func (s *GatewayServer) Start(endpoint string) error {
 	router := mux.NewRouter()
 
+	metrics.RegisterMetricEndpoint(router)
 	s.s3Gateway.RegisterRoutes(router)
 
 	srv := &http.Server{

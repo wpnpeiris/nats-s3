@@ -6,6 +6,8 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/nats-io/nats.go"
 	"github.com/wpnpeiris/nats-s3/internal/client"
+	"github.com/wpnpeiris/nats-s3/internal/logging"
+	"github.com/wpnpeiris/nats-s3/internal/metrics"
 	"net/http"
 	"time"
 )
@@ -34,9 +36,17 @@ func NewS3Gateway(logger log.Logger, natsServers string, natsUser string, natsPa
 	if err != nil {
 		panic("Failed to connect to NATS")
 	}
+
 	mps := createMultipartSessionStore(logger, natsClient)
+	oc := client.NewNatsObjectClient(logger, natsClient, mps)
+	mc := client.NewMetricCollector(logger, oc)
+	err = metrics.RegisterPrometheusCollector(mc)
+	if err != nil {
+		logging.Error(logger, "msg", "Error at registering metric collector", "err", err)
+	}
+
 	return &S3Gateway{
-		client:  client.NewNatsObjectClient(logger, natsClient, mps),
+		client:  oc,
 		iam:     NewIdentityAccessManagement(credential),
 		started: time.Now().UTC(),
 	}
@@ -86,8 +96,6 @@ func (s *S3Gateway) RegisterRoutes(router *mux.Router) {
 
 	// Unauthenticated monitoring endpoints
 	r.Methods(http.MethodGet).Path("/healthz").HandlerFunc(s.Healthz)
-	r.Methods(http.MethodGet).Path("/metrics").HandlerFunc(s.Metrics)
-	r.Methods(http.MethodGet).Path("/stats").HandlerFunc(s.Stats)
 
 	r.Methods(http.MethodOptions).HandlerFunc(s.iam.Auth(s.SetOptionHeaders))
 
