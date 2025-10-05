@@ -46,7 +46,7 @@ func main() {
 
 	logging.Info(logger, "mgs", fmt.Sprintf("Starting NATS S3 server... version=%s", Version))
 	gateway := server.NewGatewayServer(logger, natsServers, natsUser, natsPassword)
-	err := gateway.ListenAndServe(serverListen)
+	err := gateway.Start(serverListen)
 	if err != nil {
 		logging.Error(logger, "msg", "Failure starting NATS S3 server", "err", err)
 		os.Exit(1)
