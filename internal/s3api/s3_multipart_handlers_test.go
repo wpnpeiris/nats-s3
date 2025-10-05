@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/xml"
 	"fmt"
+	"github.com/wpnpeiris/nats-s3/internal/logging"
 	"net/http/httptest"
 	"testing"
 
@@ -22,7 +23,8 @@ func TestInitiateMultipartUpload_SucceedsAndPersistsSession(t *testing.T) {
 	s := startJSServer(t)
 	defer s.Shutdown()
 
-	gw := NewS3Gateway(s.ClientURL(), "", "")
+	logger := logging.NewLogger(logging.Config{Level: "debug"})
+	gw := NewS3Gateway(logger, s.ClientURL(), "", "")
 
 	r := mux.NewRouter()
 	gw.RegisterRoutes(r)
@@ -58,7 +60,8 @@ func TestListParts_PaginatesDeterministically(t *testing.T) {
 	s := startJSServer(t)
 	defer s.Shutdown()
 
-	gw := NewS3Gateway(s.ClientURL(), "", "")
+	logger := logging.NewLogger(logging.Config{Level: "debug"})
+	gw := NewS3Gateway(logger, s.ClientURL(), "", "")
 	r := mux.NewRouter()
 	gw.RegisterRoutes(r)
 
@@ -143,7 +146,8 @@ func TestListParts_NoParts(t *testing.T) {
 	s := startJSServer(t)
 	defer s.Shutdown()
 
-	gw := NewS3Gateway(s.ClientURL(), "", "")
+	logger := logging.NewLogger(logging.Config{Level: "debug"})
+	gw := NewS3Gateway(logger, s.ClientURL(), "", "")
 	r := mux.NewRouter()
 	gw.RegisterRoutes(r)
 
@@ -187,7 +191,8 @@ func TestListParts_MarkerBeyondLast(t *testing.T) {
 	s := startJSServer(t)
 	defer s.Shutdown()
 
-	gw := NewS3Gateway(s.ClientURL(), "", "")
+	logger := logging.NewLogger(logging.Config{Level: "debug"})
+	gw := NewS3Gateway(logger, s.ClientURL(), "", "")
 	r := mux.NewRouter()
 	gw.RegisterRoutes(r)
 
@@ -243,7 +248,8 @@ func TestListParts_NonContiguousParts(t *testing.T) {
 	s := startJSServer(t)
 	defer s.Shutdown()
 
-	gw := NewS3Gateway(s.ClientURL(), "", "")
+	logger := logging.NewLogger(logging.Config{Level: "debug"})
+	gw := NewS3Gateway(logger, s.ClientURL(), "", "")
 	r := mux.NewRouter()
 	gw.RegisterRoutes(r)
 

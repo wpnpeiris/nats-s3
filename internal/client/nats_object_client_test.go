@@ -2,6 +2,7 @@ package client
 
 import (
 	"bytes"
+	"github.com/wpnpeiris/nats-s3/internal/logging"
 	"testing"
 	"time"
 
@@ -49,7 +50,8 @@ func TestNatsObjectClient_BasicCRUD(t *testing.T) {
 		t.Fatalf("create object store failed: %v", err)
 	}
 
-	oc := NewNatsObjectClient(c, nil)
+	logger := logging.NewLogger(logging.Config{Level: "debug"})
+	oc := NewNatsObjectClient(logger, c, nil)
 
 	// Put
 	info, err := oc.PutObject(bucket, key, "text/plain", map[string]string{"k": "v"}, data)

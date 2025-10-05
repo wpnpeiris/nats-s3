@@ -7,8 +7,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/go-kit/log"
+	"github.com/wpnpeiris/nats-s3/internal/logging"
 	"io"
-	"log"
 	"strings"
 	"time"
 
@@ -48,27 +49,36 @@ type UploadMeta struct {
 }
 
 // MultiPartStore groups storage backends used for multipart uploads.
-// SessionStore tracks session metadata in a Key-Value bucket, while
-// TempPartStore holds uploaded parts in a temporary Object Store.
+// sessionStore tracks session metadata in a Key-Value bucket, while
+// tempPartStore holds uploaded parts in a temporary Object Store.
 type MultiPartStore struct {
-	SessionStore  nats.KeyValue
-	TempPartStore nats.ObjectStore
+	logger        log.Logger
+	sessionStore  nats.KeyValue
+	tempPartStore nats.ObjectStore
+}
+
+func NewMultiPartStore(logger log.Logger, kv nats.KeyValue, os nats.ObjectStore) *MultiPartStore {
+	return &MultiPartStore{
+		logger:        logger,
+		sessionStore:  kv,
+		tempPartStore: os,
+	}
 }
 
 // createUploadMeta persists the given session value at the provided key in the
 // session Key-Value store. The value is expected to be a JSON-encoded
 // UploadMeta blob. Returns any error encountered during the put operation.
 func (m *MultiPartStore) createUploadMeta(meta UploadMeta) error {
-	log.Printf("createUploadMeta : %v\n", meta)
+	logging.Debug(m.logger, "msg", fmt.Sprintf("creating upload meta: %v", meta))
 	data, err := json.Marshal(meta)
 	if err != nil {
-		log.Printf("Error at createUploadMeta when json.Marshal(): %v\n", err)
+		logging.Error(m.logger, "msg", "Error at createUploadMeta when json.Marshal()", "err", err)
 		return err
 	}
 	key := sessionKey(meta.Bucket, meta.Key, meta.UploadID)
-	_, err = m.SessionStore.Put(key, data)
+	_, err = m.sessionStore.Put(key, data)
 	if err != nil {
-		log.Printf("Error at createUploadMeta when SessionStore.Put(): %v\n", err)
+		logging.Error(m.logger, "msg", "Error at createUploadMeta when sessionStore.Put()", "err", err)
 		return err
 	}
 	return nil
@@ -76,16 +86,17 @@ func (m *MultiPartStore) createUploadMeta(meta UploadMeta) error {
 
 // saveUploadMeta updates the persisted multipart upload session metadata.
 func (m *MultiPartStore) saveUploadMeta(meta UploadMeta, revision uint64) error {
+	logging.Debug(m.logger, "msg", fmt.Sprintf("save upload meta: %v", meta))
 	data, err := json.Marshal(meta)
 	if err != nil {
-		log.Printf("Error at saveUploadMeta when json.Marshal(): %v\n", err)
+		logging.Error(m.logger, "msg", "Error at saveUploadMeta when json.Marshal()", "err", err)
 		return err
 	}
 	key := sessionKey(meta.Bucket, meta.Key, meta.UploadID)
 	// FIXME: Retries on revision conflicts to synchronize concurrent updates across goroutines/processes.
-	_, err = m.SessionStore.Update(key, data, revision)
+	_, err = m.sessionStore.Update(key, data, revision)
 	if err != nil {
-		log.Printf("Error at saveUploadMeta when SessionStore.Update(): %v\n", err)
+		logging.Error(m.logger, "msg", "Error at saveUploadMeta when sessionStore.Update()", "err", err)
 		return err
 	}
 	return nil
@@ -93,10 +104,11 @@ func (m *MultiPartStore) saveUploadMeta(meta UploadMeta, revision uint64) error 
 
 // deleteUploadMeta delete the persisted multipart upload session metadata.
 func (m *MultiPartStore) deleteUploadMeta(meta UploadMeta) error {
+	logging.Debug(m.logger, "msg", fmt.Sprintf("deleting upload meta: %v", meta))
 	key := sessionKey(meta.Bucket, meta.Key, meta.UploadID)
-	err := m.SessionStore.Delete(key)
+	err := m.sessionStore.Delete(key)
 	if err != nil {
-		log.Printf("Error at deleteUploadMeta when SessionStore.Delete(): %v\n", err)
+		logging.Error(m.logger, "msg", "Error at deleteUploadMeta when sessionStore.Delete()", "err", err)
 		return err
 	}
 
@@ -106,10 +118,10 @@ func (m *MultiPartStore) deleteUploadMeta(meta UploadMeta) error {
 // createPartUpload streams a part from the provided reader into the temporary
 // Object Store under the given part key and returns the stored object's info.
 func (m *MultiPartStore) createPartUpload(partKey string, dataReader *io.PipeReader) (*nats.ObjectInfo, error) {
-	log.Printf("createPartUpload : %s\n", partKey)
-	obj, err := m.TempPartStore.Put(&nats.ObjectMeta{Name: partKey}, dataReader)
+	logging.Debug(m.logger, "msg", fmt.Sprintf("creating part upload: %s", partKey))
+	obj, err := m.tempPartStore.Put(&nats.ObjectMeta{Name: partKey}, dataReader)
 	if err != nil {
-		log.Printf("Error at createPartUpload when TempPartStore.Put(): %v\n", err)
+		logging.Error(m.logger, "msg", "Error at createPartUpload when tempPartStore.Put()", "err", err)
 		return nil, err
 	}
 	return obj, nil
@@ -117,21 +129,24 @@ func (m *MultiPartStore) createPartUpload(partKey string, dataReader *io.PipeRea
 
 // getPartUpload return part from the temporary Object Store.
 func (m *MultiPartStore) getPartUpload(partKey string) (nats.ObjectResult, error) {
-	return m.TempPartStore.Get(partKey)
+	logging.Debug(m.logger, "msg", fmt.Sprintf("get part upload: %s", partKey))
+	return m.tempPartStore.Get(partKey)
 }
 
 // deletePartUpload delete part from the temporary Object Store.
 func (m *MultiPartStore) deletePartUpload(partKey string) error {
-	return m.TempPartStore.Delete(partKey)
+	logging.Debug(m.logger, "msg", fmt.Sprintf("delete part upload: %s", partKey))
+	return m.tempPartStore.Delete(partKey)
 }
 
 // deleteAllPartUpload delete all parts from the temporary Object Store.
 func (m *MultiPartStore) deleteAllPartUpload(meta UploadMeta) error {
+	logging.Debug(m.logger, "msg", fmt.Sprintf("delete all part upload: %v", meta))
 	for pn := range meta.Parts {
 		key := partKey(meta.Bucket, meta.Key, meta.UploadID, pn)
-		err := m.TempPartStore.Delete(key)
+		err := m.tempPartStore.Delete(key)
 		if err != nil {
-			log.Printf("Error at deleteAllPartUpload when TempPartStore.Delete(): %v\n", err)
+			logging.Error(m.logger, "msg", "Error at deleteAllPartUpload when tempPartStore.Delete()", "err", err)
 			return err
 		}
 	}
@@ -142,9 +157,10 @@ func (m *MultiPartStore) deleteAllPartUpload(meta UploadMeta) error {
 // getUploadMeta fetches the KV entry for a multipart upload session, including
 // its current revision number for optimistic updates.
 func (m *MultiPartStore) getUploadMeta(sessionKey string) (nats.KeyValueEntry, error) {
-	entry, err := m.SessionStore.Get(sessionKey)
+	logging.Debug(m.logger, "msg", fmt.Sprintf("get upload meta: %s", sessionKey))
+	entry, err := m.sessionStore.Get(sessionKey)
 	if err != nil {
-		log.Printf("Error at getSession when kv.Get(): %v\n", err)
+		logging.Error(m.logger, "msg", "Error at getSession when kv.Get()", "err", err)
 		return nil, err
 	}
 	return entry, nil
@@ -153,12 +169,14 @@ func (m *MultiPartStore) getUploadMeta(sessionKey string) (nats.KeyValueEntry, e
 // NatsObjectClient provides convenience helpers for common NATS JetStream
 // Object Store operations, built on top of the base Client connection.
 type NatsObjectClient struct {
+	logger         log.Logger
 	client         *Client
 	multiPartStore *MultiPartStore
 }
 
-func NewNatsObjectClient(natsClient *Client, mps *MultiPartStore) *NatsObjectClient {
+func NewNatsObjectClient(logger log.Logger, natsClient *Client, mps *MultiPartStore) *NatsObjectClient {
 	return &NatsObjectClient{
+		logger:         logger,
 		client:         natsClient,
 		multiPartStore: mps,
 	}
@@ -178,10 +196,11 @@ func (c *NatsObjectClient) Stats() nats.Statistics {
 
 // CreateBucket creates a JetStream Object Store bucket.
 func (c *NatsObjectClient) CreateBucket(bucketName string) (nats.ObjectStoreStatus, error) {
+	logging.Info(c.logger, "msg", fmt.Sprintf("Create bucket: %s", bucketName))
 	nc := c.client.NATS()
 	js, err := nc.JetStream()
 	if err != nil {
-		log.Printf("Error at CreateBucket when nc.JetStream(): %v\n", err)
+		logging.Error(c.logger, "msg", "Error at CreateBucket when nc.JetStream()", "err", err)
 		return nil, err
 	}
 
@@ -190,7 +209,7 @@ func (c *NatsObjectClient) CreateBucket(bucketName string) (nats.ObjectStoreStat
 		Storage: nats.FileStorage,
 	})
 	if err != nil {
-		log.Printf("Error at CreateBucket when js.CreateObjectStore: %v\n", err)
+		logging.Error(c.logger, "msg", "Error at CreateObjectStore", "err", err)
 		return nil, err
 	}
 
@@ -199,15 +218,16 @@ func (c *NatsObjectClient) CreateBucket(bucketName string) (nats.ObjectStoreStat
 
 // DeleteBucket deletes a bucket identified by its name.
 func (c *NatsObjectClient) DeleteBucket(bucket string) error {
+	logging.Info(c.logger, "msg", fmt.Sprintf("Delete bucket: %s", bucket))
 	nc := c.client.NATS()
 	js, err := nc.JetStream()
 	if err != nil {
-		log.Printf("Error at DeleteBucket when nc.JetStream(): %v\n", err)
+		logging.Error(c.logger, "msg", "Error at DeleteBucket", "err", err)
 		return err
 	}
 	err = js.DeleteObjectStore(bucket)
 	if err != nil {
-		log.Printf("Error at DeleteBucket when js.DeleteObjectStore(): %v\n", err)
+		logging.Error(c.logger, "msg", "Error at DeleteBucket", "err", err)
 		if errors.Is(err, nats.ErrStreamNotFound) {
 			return ErrBucketNotFound
 		}
@@ -218,15 +238,16 @@ func (c *NatsObjectClient) DeleteBucket(bucket string) error {
 
 // DeleteObject removes an object identified by bucket and key.
 func (c *NatsObjectClient) DeleteObject(bucket string, key string) error {
+	logging.Info(c.logger, "msg", fmt.Sprintf("Delete object on bucket: [%s/%s]", bucket, key))
 	nc := c.client.NATS()
 	js, err := nc.JetStream()
 	if err != nil {
-		log.Printf("Error at DeleteObject when nc.JetStream(): %v\n", err)
+		logging.Error(c.logger, "msg", "Error at DeleteObject", "err", err)
 		return err
 	}
 	os, err := js.ObjectStore(bucket)
 	if err != nil {
-		log.Printf("Error at DeleteObject when js.ObjectStore: %v\n", err)
+		logging.Error(c.logger, "msg", "Error at DeleteObject", "err", err)
 		if errors.Is(err, nats.ErrStreamNotFound) {
 			return ErrBucketNotFound
 		}
@@ -234,7 +255,7 @@ func (c *NatsObjectClient) DeleteObject(bucket string, key string) error {
 	}
 	err = os.Delete(key)
 	if err != nil {
-		log.Printf("Error at DeleteObject when os.Delete: %v\n", err)
+		logging.Error(c.logger, "msg", "Error at DeleteObject", "err", err)
 		if errors.Is(err, nats.ErrObjectNotFound) {
 			return ErrObjectNotFound
 		}
@@ -246,15 +267,16 @@ func (c *NatsObjectClient) DeleteObject(bucket string, key string) error {
 
 // GetObjectInfo fetches metadata for an object.
 func (c *NatsObjectClient) GetObjectInfo(bucket string, key string) (*nats.ObjectInfo, error) {
+	logging.Info(c.logger, "msg", fmt.Sprintf("Get object info: [%s/%s]", bucket, key))
 	nc := c.client.NATS()
 	js, err := nc.JetStream()
 	if err != nil {
-		log.Printf("Error at GetObjectInfo when js.JetStream: %v\n", err)
+		logging.Error(c.logger, "msg", "Error at GetObjectInfo", "err", err)
 		return nil, err
 	}
 	os, err := js.ObjectStore(bucket)
 	if err != nil {
-		log.Printf("Error at GetObjectInfo when js.ObjectStore: %v\n", err)
+		logging.Error(c.logger, "msg", "Error at GetObjectInfo", "err", err)
 		if errors.Is(err, nats.ErrStreamNotFound) {
 			return nil, ErrBucketNotFound
 		}
@@ -262,7 +284,7 @@ func (c *NatsObjectClient) GetObjectInfo(bucket string, key string) (*nats.Objec
 	}
 	obj, err := os.GetInfo(key)
 	if err != nil {
-		log.Printf("Error at GetObjectInfo when os.GetInfo: %v\n", err)
+		logging.Error(c.logger, "msg", "Error at GetObjectInfo", "err", err)
 		if errors.Is(err, nats.ErrObjectNotFound) {
 			return nil, ErrObjectNotFound
 		}
@@ -274,15 +296,16 @@ func (c *NatsObjectClient) GetObjectInfo(bucket string, key string) (*nats.Objec
 
 // GetObject retrieves an object's metadata and bytes.
 func (c *NatsObjectClient) GetObject(bucket string, key string) (*nats.ObjectInfo, []byte, error) {
+	logging.Info(c.logger, "msg", fmt.Sprintf("Delete object : [%s/%s]", bucket, key))
 	nc := c.client.NATS()
 	js, err := nc.JetStream()
 	if err != nil {
-		log.Printf("Error at GetObject when nc.JetStream(): %v\n", err)
+		logging.Error(c.logger, "msg", "Error at GetObjectInfo", "err", err)
 		return nil, nil, err
 	}
 	os, err := js.ObjectStore(bucket)
 	if err != nil {
-		log.Printf("Error at GetObject when js.ObjectStore(): %v\n", err)
+		logging.Error(c.logger, "msg", "Error at GetObjectInfo", "err", err)
 		if errors.Is(err, nats.ErrStreamNotFound) {
 			return nil, nil, ErrBucketNotFound
 		}
@@ -290,7 +313,7 @@ func (c *NatsObjectClient) GetObject(bucket string, key string) (*nats.ObjectInf
 	}
 	info, err := os.GetInfo(key)
 	if err != nil {
-		log.Printf("Error at GetObject when os.GetInfo(): %v\n", err)
+		logging.Error(c.logger, "msg", "Error at GetObjectInfo", "err", err)
 		if errors.Is(err, nats.ErrObjectNotFound) {
 			return nil, nil, ErrObjectNotFound
 		}
@@ -298,7 +321,7 @@ func (c *NatsObjectClient) GetObject(bucket string, key string) (*nats.ObjectInf
 	}
 	res, err := os.GetBytes(key)
 	if err != nil {
-		log.Printf("Error at GetObject when os.GetBytes(): %v\n", err)
+		logging.Error(c.logger, "msg", "Error at GetObjectInfo", "err", err)
 		return nil, nil, err
 	}
 	return info, res, nil
@@ -306,10 +329,11 @@ func (c *NatsObjectClient) GetObject(bucket string, key string) (*nats.ObjectInf
 
 // ListBuckets returns a channel of object store statuses for all buckets.
 func (c *NatsObjectClient) ListBuckets() (<-chan nats.ObjectStoreStatus, error) {
+	logging.Info(c.logger, "msg", "List buckets")
 	nc := c.client.NATS()
 	js, err := nc.JetStream()
 	if err != nil {
-		log.Printf("Error at ListBuckets when js.JetStream: %v\n", err)
+		logging.Error(c.logger, "msg", "Error at ListBuckets", "err", err)
 		return nil, err
 	}
 	return js.ObjectStores(), nil
@@ -317,15 +341,16 @@ func (c *NatsObjectClient) ListBuckets() (<-chan nats.ObjectStoreStatus, error) 
 
 // ListObjects lists all objects in the given bucket.
 func (c *NatsObjectClient) ListObjects(bucket string) ([]*nats.ObjectInfo, error) {
+	logging.Info(c.logger, "msg", fmt.Sprintf("List objects: [%s]", bucket))
 	nc := c.client.NATS()
 	js, err := nc.JetStream()
 	if err != nil {
-		log.Printf("Error at ListObjects when js.JetStream: %v\n", err)
+		logging.Error(c.logger, "msg", "Error at ListObjects", "err", err)
 		return nil, err
 	}
 	os, err := js.ObjectStore(bucket)
 	if err != nil {
-		log.Printf("Error at ListObjects when js.ObjectStore: %v\n", err)
+		logging.Error(c.logger, "msg", "Error at ListObjects", "err", err)
 		if errors.Is(err, nats.ErrStreamNotFound) {
 			return nil, ErrBucketNotFound
 		}
@@ -333,7 +358,7 @@ func (c *NatsObjectClient) ListObjects(bucket string) ([]*nats.ObjectInfo, error
 	}
 	ls, err := os.List()
 	if err != nil {
-		log.Printf("Error at ListObjects when js.List: %v\n", err)
+		logging.Error(c.logger, "msg", "Error at ListObjects", "err", err)
 		if errors.Is(err, nats.ErrNoObjectsFound) {
 			return nil, ErrObjectNotFound
 		}
@@ -348,15 +373,16 @@ func (c *NatsObjectClient) PutObject(bucket string,
 	contentType string,
 	metadata map[string]string,
 	data []byte) (*nats.ObjectInfo, error) {
+	logging.Info(c.logger, "msg", fmt.Sprintf("Pub object: [%s/%s]", bucket, key))
 	nc := c.client.NATS()
 	js, err := nc.JetStream()
 	if err != nil {
-		log.Printf("Error at PutObject when js.JetStream: %v\n", err)
+		logging.Error(c.logger, "msg", "Error at PutObject", "err", err)
 		return nil, err
 	}
 	os, err := js.ObjectStore(bucket)
 	if err != nil {
-		log.Printf("Error at PutObject when js.ObjectStore: %v\n", err)
+		logging.Error(c.logger, "msg", "Error at PutObject", "err", err)
 		if errors.Is(err, nats.ErrStreamNotFound) {
 			return nil, ErrBucketNotFound
 		}
@@ -377,6 +403,7 @@ func (c *NatsObjectClient) PutObject(bucket string,
 // InitMultipartUpload creates and persists a new multipart upload session
 // for the given bucket/key and uploadID.
 func (c *NatsObjectClient) InitMultipartUpload(bucket string, key string, uploadID string) error {
+	logging.Info(c.logger, "msg", fmt.Sprintf("Init multipart upload: [%s/%s]", bucket, key))
 	meta := UploadMeta{
 		UploadID:  uploadID,
 		Bucket:    bucket,
@@ -393,6 +420,7 @@ func (c *NatsObjectClient) InitMultipartUpload(bucket string, key string, upload
 // UploadPart streams a part into temporary storage and records its ETag/size
 // under the multipart session. Returns the hex ETag (without quotes).
 func (c *NatsObjectClient) UploadPart(bucket string, key string, uploadID string, part int, dataReader io.ReadCloser) (string, error) {
+	logging.Info(c.logger, "msg", fmt.Sprintf("Upload part: [%s/%s], UploadID: %s", bucket, key, uploadID))
 	sessionKey := sessionKey(bucket, key, uploadID)
 	sessionData, err := c.multiPartStore.getUploadMeta(sessionKey)
 	if err != nil {
@@ -401,7 +429,7 @@ func (c *NatsObjectClient) UploadPart(bucket string, key string, uploadID string
 
 	var meta UploadMeta
 	if err := json.Unmarshal(sessionData.Value(), &meta); err != nil {
-		log.Printf("Error at UploadPart when json.Unmarshal(): %v\n", err)
+		logging.Error(c.logger, "msg", "Error at UploadPart", "err", err)
 		return "", err
 	}
 
@@ -436,6 +464,7 @@ func (c *NatsObjectClient) UploadPart(bucket string, key string, uploadID string
 // AbortMultipartUpload aborts an in‑progress multipart upload, deleting any
 // uploaded parts and removing the session metadata.
 func (c *NatsObjectClient) AbortMultipartUpload(bucket string, key string, uploadID string) error {
+	logging.Info(c.logger, "msg", fmt.Sprintf("Abort multipart upload: [%s/%s], UploadID: %s", bucket, key, uploadID))
 	sessionKey := sessionKey(bucket, key, uploadID)
 	sessionData, err := c.multiPartStore.getUploadMeta(sessionKey)
 	if err != nil {
@@ -444,7 +473,7 @@ func (c *NatsObjectClient) AbortMultipartUpload(bucket string, key string, uploa
 
 	var meta UploadMeta
 	if err := json.Unmarshal(sessionData.Value(), &meta); err != nil {
-		log.Printf("Error at UploadPart when json.Unmarshal(): %v\n", err)
+		logging.Error(c.logger, "msg", "Error at AbortMultipartUpload", "err", err)
 		return err
 	}
 
@@ -452,13 +481,13 @@ func (c *NatsObjectClient) AbortMultipartUpload(bucket string, key string, uploa
 		partKey := partKey(bucket, key, uploadID, pn)
 		err := c.multiPartStore.deletePartUpload(partKey)
 		if err != nil {
-			log.Printf("Error at deletePartUpload when AbortMultipartUpload(): %v\n", err)
+			logging.Error(c.logger, "msg", "Error at AbortMultipartUpload", "err", err)
 		}
 	}
 
 	err = c.multiPartStore.deleteUploadMeta(meta)
 	if err != nil {
-		log.Printf("WARN, failed to delete multipart session data: %v\n", err)
+		logging.Warn(c.logger, "msg", "Failed to delete multipart session data at AbortMultipartUpload", "err", err)
 		return err
 	}
 
@@ -468,6 +497,7 @@ func (c *NatsObjectClient) AbortMultipartUpload(bucket string, key string, uploa
 // ListParts returns the multipart upload session metadata for the given
 // bucket/key/uploadID, including uploaded parts with sizes and ETags.
 func (c *NatsObjectClient) ListParts(bucket string, key string, uploadID string) (*UploadMeta, error) {
+	logging.Info(c.logger, "msg", fmt.Sprintf("List parts: [%s/%s], UploadID: %s", bucket, key, uploadID))
 	sessionKey := sessionKey(bucket, key, uploadID)
 	sessionData, err := c.multiPartStore.getUploadMeta(sessionKey)
 	if err != nil {
@@ -476,7 +506,7 @@ func (c *NatsObjectClient) ListParts(bucket string, key string, uploadID string)
 
 	var meta UploadMeta
 	if err := json.Unmarshal(sessionData.Value(), &meta); err != nil {
-		log.Printf("Error at UploadPart when json.Unmarshal(): %v\n", err)
+		logging.Error(c.logger, "msg", "Error at ListParts", "err", err)
 		return nil, err
 	}
 
@@ -487,6 +517,7 @@ func (c *NatsObjectClient) ListParts(bucket string, key string, uploadID string)
 // object, computes and returns the multipart ETag, and cleans up temporary
 // parts and session metadata.
 func (c *NatsObjectClient) CompleteMultipartUpload(bucket string, key string, uploadID string, sortedPartNumbers []int) (string, error) {
+	logging.Info(c.logger, "msg", fmt.Sprintf("Complete multipart upload: [%s/%s], UploadID: %s", bucket, key, uploadID))
 	sessionKey := sessionKey(bucket, key, uploadID)
 	sessionData, err := c.multiPartStore.getUploadMeta(sessionKey)
 	if err != nil {
@@ -495,7 +526,7 @@ func (c *NatsObjectClient) CompleteMultipartUpload(bucket string, key string, up
 
 	var meta UploadMeta
 	if err := json.Unmarshal(sessionData.Value(), &meta); err != nil {
-		log.Printf("Error at UploadPart when json.Unmarshal(): %v\n", err)
+		logging.Error(c.logger, "msg", "Error at CompleteMultipartUpload", "err", err)
 		return "", err
 	}
 
@@ -532,12 +563,12 @@ func (c *NatsObjectClient) CompleteMultipartUpload(bucket string, key string, up
 	nc := c.client.NATS()
 	js, err := nc.JetStream()
 	if err != nil {
-		log.Printf("Error at CompleteMultipartUpload when js.JetStream: %v\n", err)
+		logging.Error(c.logger, "msg", "Error at CompleteMultipartUpload", "err", err)
 		return "", err
 	}
 	os, err := js.ObjectStore(bucket)
 	if err != nil {
-		log.Printf("Error at CompleteMultipartUpload when js.ObjectStore: %v\n", err)
+		logging.Error(c.logger, "msg", "Error at CompleteMultipartUpload", "err", err)
 		if errors.Is(err, nats.ErrStreamNotFound) {
 			return "", ErrBucketNotFound
 		}
@@ -545,7 +576,7 @@ func (c *NatsObjectClient) CompleteMultipartUpload(bucket string, key string, up
 	}
 	_, err = os.Put(&nats.ObjectMeta{Name: key}, pr)
 	if err != nil {
-		log.Printf("Error at CompleteMultipartUpload when os.Put(): %v\n", err)
+		logging.Error(c.logger, "msg", "Error at CompleteMultipartUpload", "err", err)
 		return "", err
 	}
 
@@ -554,12 +585,12 @@ func (c *NatsObjectClient) CompleteMultipartUpload(bucket string, key string, up
 
 	err = c.multiPartStore.deleteAllPartUpload(meta)
 	if err != nil {
-		log.Printf("WARN, failed to clean multipart session/temp data: %v\n", err)
+		logging.Warn(c.logger, "msg", "Failed to clean multipart session/temp data at CompleteMultipartUpload", "err", err)
 	}
 
 	err = c.multiPartStore.deleteUploadMeta(meta)
 	if err != nil {
-		log.Printf("WARN, failed to delete multipart session data: %v\n", err)
+		logging.Warn(c.logger, "Failed to delete multipart session data", "err", err)
 		return "", err
 	}
 

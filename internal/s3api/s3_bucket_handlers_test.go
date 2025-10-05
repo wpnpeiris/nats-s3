@@ -2,6 +2,7 @@ package s3api
 
 import (
 	"encoding/xml"
+	"github.com/wpnpeiris/nats-s3/internal/logging"
 	"net/http/httptest"
 	"testing"
 
@@ -25,7 +26,8 @@ func TestListBuckets(t *testing.T) {
 	s := startJSServer(t)
 	defer s.Shutdown()
 
-	gw := NewS3Gateway(s.ClientURL(), "", "")
+	logger := logging.NewLogger(logging.Config{Level: "debug"})
+	gw := NewS3Gateway(logger, s.ClientURL(), "", "")
 
 	// Create a couple of buckets so ListBuckets has content.
 	natsEndpoint := s.Addr().String()
@@ -80,7 +82,8 @@ func TestCreateBucket(t *testing.T) {
 	s := startJSServer(t)
 	defer s.Shutdown()
 
-	gw := NewS3Gateway(s.ClientURL(), "", "")
+	logger := logging.NewLogger(logging.Config{Level: "debug"})
+	gw := NewS3Gateway(logger, s.ClientURL(), "", "")
 
 	r := mux.NewRouter()
 	gw.RegisterRoutes(r)

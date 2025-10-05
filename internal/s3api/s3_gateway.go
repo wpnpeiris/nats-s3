@@ -2,12 +2,12 @@ package s3api
 
 import (
 	"errors"
-	"net/http"
-	"time"
-
+	"github.com/go-kit/log"
 	"github.com/gorilla/mux"
 	"github.com/nats-io/nats.go"
 	"github.com/wpnpeiris/nats-s3/internal/client"
+	"net/http"
+	"time"
 )
 
 // S3Gateway registers S3-compatible HTTP routes (2006-03-01) and delegates
@@ -21,7 +21,7 @@ type S3Gateway struct {
 
 // NewS3Gateway creates a gateway instance and establishes a connection to
 // NATS using the given servers and credentials.
-func NewS3Gateway(natsServers string, natsUser string, natsPassword string) *S3Gateway {
+func NewS3Gateway(logger log.Logger, natsServers string, natsUser string, natsPassword string) *S3Gateway {
 	var natsOptions []nats.Option
 	var credential Credential
 	if natsUser != "" && natsPassword != "" {
@@ -34,15 +34,15 @@ func NewS3Gateway(natsServers string, natsUser string, natsPassword string) *S3G
 	if err != nil {
 		panic("Failed to connect to NATS")
 	}
-	mps := createMultipartSessionStore(natsClient)
+	mps := createMultipartSessionStore(logger, natsClient)
 	return &S3Gateway{
-		client:  client.NewNatsObjectClient(natsClient, mps),
+		client:  client.NewNatsObjectClient(logger, natsClient, mps),
 		iam:     NewIdentityAccessManagement(credential),
 		started: time.Now().UTC(),
 	}
 }
 
-func createMultipartSessionStore(c *client.Client) *client.MultiPartStore {
+func createMultipartSessionStore(logger log.Logger, c *client.Client) *client.MultiPartStore {
 	nc := c.NATS()
 	js, err := nc.JetStream()
 	if err != nil {
@@ -77,10 +77,7 @@ func createMultipartSessionStore(c *client.Client) *client.MultiPartStore {
 		}
 	}
 
-	return &client.MultiPartStore{
-		SessionStore:  kv,
-		TempPartStore: os,
-	}
+	return client.NewMultiPartStore(logger, kv, os)
 }
 
 // RegisterRoutes wires the S3 REST API endpoints onto the provided mux router.
