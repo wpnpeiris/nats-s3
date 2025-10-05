@@ -5,6 +5,7 @@ import (
 	"errors"
 	"github.com/gorilla/mux"
 	"github.com/wpnpeiris/nats-s3/internal/client"
+	"github.com/wpnpeiris/nats-s3/internal/model"
 	"net/http"
 	"time"
 
@@ -25,7 +26,7 @@ func (s *S3Gateway) CreateBucket(w http.ResponseWriter, r *http.Request) {
 	bucket := mux.Vars(r)["bucket"]
 	os, err := s.client.CreateBucket(bucket)
 	if err != nil {
-		WriteErrorResponse(w, r, ErrInternalError)
+		model.WriteErrorResponse(w, r, model.ErrInternalError)
 		return
 	}
 
@@ -38,7 +39,7 @@ func (s *S3Gateway) CreateBucket(w http.ResponseWriter, r *http.Request) {
 		Buckets: buckets,
 	}
 
-	WriteXMLResponse(w, r, http.StatusOK, response)
+	model.WriteXMLResponse(w, r, http.StatusOK, response)
 }
 
 // DeleteBucket deletes the specified bucket and responds with 204 No Content.
@@ -48,14 +49,14 @@ func (s *S3Gateway) DeleteBucket(w http.ResponseWriter, r *http.Request) {
 	err := s.client.DeleteBucket(bucket)
 	if err != nil {
 		if errors.Is(err, client.ErrBucketNotFound) {
-			WriteErrorResponse(w, r, ErrNoSuchBucket)
+			model.WriteErrorResponse(w, r, model.ErrNoSuchBucket)
 			return
 		}
-		WriteErrorResponse(w, r, ErrInternalError)
+		model.WriteErrorResponse(w, r, model.ErrInternalError)
 		return
 	}
 
-	WriteEmptyResponse(w, r, http.StatusNoContent)
+	model.WriteEmptyResponse(w, r, http.StatusNoContent)
 }
 
 // ListBuckets enumerates existing JetStream Object Store buckets and returns
@@ -63,7 +64,7 @@ func (s *S3Gateway) DeleteBucket(w http.ResponseWriter, r *http.Request) {
 func (s *S3Gateway) ListBuckets(w http.ResponseWriter, r *http.Request) {
 	entries, err := s.client.ListBuckets()
 	if err != nil {
-		WriteErrorResponse(w, r, ErrInternalError)
+		model.WriteErrorResponse(w, r, model.ErrInternalError)
 		return
 	}
 
@@ -80,5 +81,5 @@ func (s *S3Gateway) ListBuckets(w http.ResponseWriter, r *http.Request) {
 		Buckets: buckets,
 	}
 
-	WriteXMLResponse(w, r, http.StatusOK, response)
+	model.WriteXMLResponse(w, r, http.StatusOK, response)
 }

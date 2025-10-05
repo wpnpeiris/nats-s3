@@ -5,6 +5,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/gorilla/mux"
 	"github.com/nats-io/nats.go"
+	"github.com/wpnpeiris/nats-s3/internal/auth"
 	"github.com/wpnpeiris/nats-s3/internal/client"
 	"github.com/wpnpeiris/nats-s3/internal/logging"
 	"github.com/wpnpeiris/nats-s3/internal/metrics"
@@ -17,7 +18,7 @@ import (
 // Unimplemented endpoints intentionally respond with HTTP 501 Not Implemented.
 type S3Gateway struct {
 	client  *client.NatsObjectClient
-	iam     *IdentityAccessManagement
+	iam     *auth.IdentityAccessManagement
 	started time.Time
 }
 
@@ -25,10 +26,10 @@ type S3Gateway struct {
 // NATS using the given servers and credentials.
 func NewS3Gateway(logger log.Logger, natsServers string, natsUser string, natsPassword string) *S3Gateway {
 	var natsOptions []nats.Option
-	var credential Credential
+	var credential auth.Credential
 	if natsUser != "" && natsPassword != "" {
 		natsOptions = append(natsOptions, nats.UserInfo(natsUser, natsPassword))
-		credential = NewCredential(natsUser, natsPassword)
+		credential = auth.NewCredential(natsUser, natsPassword)
 	}
 
 	natsClient := client.NewClient("s3-gateway")
@@ -47,7 +48,7 @@ func NewS3Gateway(logger log.Logger, natsServers string, natsUser string, natsPa
 
 	return &S3Gateway{
 		client:  oc,
-		iam:     NewIdentityAccessManagement(credential),
+		iam:     auth.NewIdentityAccessManagement(credential),
 		started: time.Now().UTC(),
 	}
 }

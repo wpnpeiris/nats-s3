@@ -1,10 +1,11 @@
-package s3api
+package auth
 
 import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"github.com/wpnpeiris/nats-s3/internal/model"
 	"net/http"
 	"net/url"
 	"sort"
@@ -13,7 +14,7 @@ import (
 )
 
 type AuthError struct {
-	code ErrorCode
+	code model.ErrorCode
 }
 
 func (e *AuthError) Error() string {
@@ -79,13 +80,13 @@ func (iam *IdentityAccessManagement) Auth(f http.HandlerFunc) http.HandlerFunc {
 		// Support both header-based SigV4 and presigned URL SigV4.
 		hp, authErr := extractAuthHeaderParameters(r)
 		if authErr != nil {
-			WriteErrorResponse(w, r, authErr.code)
+			model.WriteErrorResponse(w, r, authErr.code)
 			return
 		}
 
 		authErr = validateAuthHeaderParameters(iam.credential.accessKey, hp)
 		if authErr != nil {
-			WriteErrorResponse(w, r, authErr.code)
+			model.WriteErrorResponse(w, r, authErr.code)
 			return
 		}
 
@@ -126,7 +127,7 @@ func (iam *IdentityAccessManagement) Auth(f http.HandlerFunc) http.HandlerFunc {
 		calcSig := hex.EncodeToString(sigBytes)
 
 		if !hmac.Equal([]byte(strings.ToLower(hp.signature)), []byte(strings.ToLower(calcSig))) {
-			WriteErrorResponse(w, r, ErrSignatureDoesNotMatch)
+			model.WriteErrorResponse(w, r, model.ErrSignatureDoesNotMatch)
 			return
 		}
 
@@ -169,10 +170,10 @@ func extractAuthHeaderParameters(r *http.Request) (*AuthHeaderParameters, *AuthE
 		headerParams.requestTime = r.Header.Get("x-amz-date")
 		if headerParams.requestTime == "" {
 			// fallback to Date header is not supported for SigV4 here
-			return nil, &AuthError{ErrMissingDateHeader}
+			return nil, &AuthError{model.ErrMissingDateHeader}
 		}
 		if headerParams.hashedPayload == "" {
-			return nil, &AuthError{ErrInvalidDigest}
+			return nil, &AuthError{model.ErrInvalidDigest}
 		}
 	} else if qs.Get("X-Amz-Algorithm") == "AWS4-HMAC-SHA256" {
 		headerParams.algo = "AWS4-HMAC-SHA256"
@@ -201,14 +202,14 @@ func extractAuthHeaderParameters(r *http.Request) (*AuthHeaderParameters, *AuthE
 				// Accept small clock skew of 5 minutes
 				maxT := tReq.Add(time.Duration(parseIntDefault(expStr, 0)) * time.Second).Add(5 * time.Minute)
 				if time.Now().UTC().After(maxT) {
-					return nil, &AuthError{ErrExpiredPresignRequest}
+					return nil, &AuthError{model.ErrExpiredPresignRequest}
 				}
 			} else {
-				return nil, &AuthError{ErrMalformedPresignedDate}
+				return nil, &AuthError{model.ErrMalformedPresignedDate}
 			}
 		}
 	} else {
-		return nil, &AuthError{ErrAccessDenied}
+		return nil, &AuthError{model.ErrAccessDenied}
 	}
 
 	return headerParams, nil
@@ -216,26 +217,26 @@ func extractAuthHeaderParameters(r *http.Request) (*AuthHeaderParameters, *AuthE
 
 func validateAuthHeaderParameters(accessKey string, hp *AuthHeaderParameters) *AuthError {
 	if hp.algo != "AWS4-HMAC-SHA256" || hp.accessKey == "" || hp.signedHeaders == "" || hp.signature == "" || hp.requestTime == "" {
-		return &AuthError{ErrSignatureDoesNotMatch}
+		return &AuthError{model.ErrSignatureDoesNotMatch}
 	}
 
 	// Verify access key matches configured credential
 	if hp.accessKey != accessKey {
-		return &AuthError{ErrInvalidAccessKeyID}
+		return &AuthError{model.ErrInvalidAccessKeyID}
 	}
 
 	// Minimal validation of scope
 	if hp.scopeDate == "" || hp.scopeRegion == "" || hp.scopeService != "s3" {
-		return &AuthError{ErrCredMalformed}
+		return &AuthError{model.ErrCredMalformed}
 	}
 
 	// Validate time skew (+/- 5 minutes)
 	tReq, err := time.Parse("20060102T150405Z", hp.requestTime)
 	if err != nil {
-		return &AuthError{ErrMalformedPresignedDate}
+		return &AuthError{model.ErrMalformedPresignedDate}
 	}
 	if d := time.Since(tReq.UTC()); d > 5*time.Minute || d < -5*time.Minute {
-		return &AuthError{ErrRequestNotReadyYet}
+		return &AuthError{model.ErrRequestNotReadyYet}
 	}
 
 	return nil

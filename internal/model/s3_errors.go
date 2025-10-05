@@ -1,4 +1,4 @@
-package s3api
+package model
 
 import "net/http"
 
