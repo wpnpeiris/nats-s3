@@ -57,7 +57,41 @@ type MultiPartStore struct {
 	tempPartStore nats.ObjectStore
 }
 
-func NewMultiPartStore(logger log.Logger, kv nats.KeyValue, os nats.ObjectStore) *MultiPartStore {
+func newMultiPartStore(logger log.Logger, c *Client) *MultiPartStore {
+	nc := c.NATS()
+	js, err := nc.JetStream()
+	if err != nil {
+		panic("Failed to create to multipart session store when nc.JetStream()")
+	}
+
+	kv, err := js.KeyValue(MultiPartSessionStoreName)
+	if err != nil {
+		if errors.Is(err, nats.ErrBucketNotFound) {
+			kv, err = js.CreateKeyValue(&nats.KeyValueConfig{
+				Bucket: MultiPartSessionStoreName,
+			})
+			if err != nil {
+				panic("Failed to create to multipart session store when js.CreateKeyValue()")
+			}
+		} else {
+			panic("Failed to create to multipart session store when js.KeyValue()")
+		}
+	}
+
+	os, err := js.ObjectStore(MultiPartTempStoreName)
+	if err != nil && errors.Is(err, nats.ErrStreamNotFound) {
+		if errors.Is(err, nats.ErrStreamNotFound) {
+			os, err = js.CreateObjectStore(&nats.ObjectStoreConfig{
+				Bucket: MultiPartTempStoreName,
+			})
+			if err != nil {
+				panic("Failed to create to multipart temp store when js.CreateObjectStore()")
+			}
+		} else {
+			panic("Failed to create to multipart temp store when js.ObjectStore()")
+		}
+	}
+
 	return &MultiPartStore{
 		logger:        logger,
 		sessionStore:  kv,
@@ -174,7 +208,8 @@ type NatsObjectClient struct {
 	multiPartStore *MultiPartStore
 }
 
-func NewNatsObjectClient(logger log.Logger, natsClient *Client, mps *MultiPartStore) *NatsObjectClient {
+func NewNatsObjectClient(logger log.Logger, natsClient *Client) *NatsObjectClient {
+	mps := newMultiPartStore(logger, natsClient)
 	return &NatsObjectClient{
 		logger:         logger,
 		client:         natsClient,
