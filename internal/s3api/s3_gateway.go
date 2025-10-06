@@ -1,7 +1,6 @@
 package s3api
 
 import (
-	"errors"
 	"github.com/go-kit/log"
 	"github.com/gorilla/mux"
 	"github.com/nats-io/nats.go"
@@ -38,8 +37,7 @@ func NewS3Gateway(logger log.Logger, natsServers string, natsUser string, natsPa
 		panic("Failed to connect to NATS")
 	}
 
-	mps := createMultipartSessionStore(logger, natsClient)
-	oc := client.NewNatsObjectClient(logger, natsClient, mps)
+	oc := client.NewNatsObjectClient(logger, natsClient)
 	mc := client.NewMetricCollector(logger, oc)
 	err = metrics.RegisterPrometheusCollector(mc)
 	if err != nil {
@@ -51,44 +49,6 @@ func NewS3Gateway(logger log.Logger, natsServers string, natsUser string, natsPa
 		iam:     auth.NewIdentityAccessManagement(credential),
 		started: time.Now().UTC(),
 	}
-}
-
-func createMultipartSessionStore(logger log.Logger, c *client.Client) *client.MultiPartStore {
-	nc := c.NATS()
-	js, err := nc.JetStream()
-	if err != nil {
-		panic("Failed to create to multipart session store when nc.JetStream()")
-	}
-
-	kv, err := js.KeyValue(client.MultiPartSessionStoreName)
-	if err != nil {
-		if errors.Is(err, nats.ErrBucketNotFound) {
-			kv, err = js.CreateKeyValue(&nats.KeyValueConfig{
-				Bucket: client.MultiPartSessionStoreName,
-			})
-			if err != nil {
-				panic("Failed to create to multipart session store when js.CreateKeyValue()")
-			}
-		} else {
-			panic("Failed to create to multipart session store when js.KeyValue()")
-		}
-	}
-
-	os, err := js.ObjectStore(client.MultiPartTempStoreName)
-	if err != nil && errors.Is(err, nats.ErrStreamNotFound) {
-		if errors.Is(err, nats.ErrStreamNotFound) {
-			os, err = js.CreateObjectStore(&nats.ObjectStoreConfig{
-				Bucket: client.MultiPartTempStoreName,
-			})
-			if err != nil {
-				panic("Failed to create to multipart temp store when js.CreateObjectStore()")
-			}
-		} else {
-			panic("Failed to create to multipart temp store when js.ObjectStore()")
-		}
-	}
-
-	return client.NewMultiPartStore(logger, kv, os)
 }
 
 // RegisterRoutes wires the S3 REST API endpoints onto the provided mux router.
