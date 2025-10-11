@@ -26,6 +26,10 @@ func (s *S3Gateway) CreateBucket(w http.ResponseWriter, r *http.Request) {
 	bucket := mux.Vars(r)["bucket"]
 	os, err := s.client.CreateBucket(bucket)
 	if err != nil {
+		if errors.Is(err, client.ErrBucketAlreadyExists) {
+			model.WriteErrorResponse(w, r, model.ErrBucketAlreadyOwnedByYou)
+			return
+		}
 		model.WriteErrorResponse(w, r, model.ErrInternalError)
 		return
 	}

@@ -21,6 +21,7 @@ var ErrObjectNotFound = errors.New("object not found")
 var ErrUploadNotFound = errors.New("multipart upload not found")
 var ErrUploadCompleted = errors.New("completed multipart upload")
 var ErrMissingPart = errors.New("missing part")
+var ErrBucketAlreadyExists = errors.New("bucket already exists")
 
 // PartMeta describes a single part in a multipart upload session.
 // It records the part number, ETag (checksum), size in bytes, and the
@@ -236,6 +237,16 @@ func (c *NatsObjectClient) CreateBucket(bucketName string) (nats.ObjectStoreStat
 	js, err := nc.JetStream()
 	if err != nil {
 		logging.Error(c.logger, "msg", "Error at CreateBucket when nc.JetStream()", "err", err)
+		return nil, err
+	}
+
+	// Check if bucket already exists to fail duplicate creation explicitly
+	_, err = js.ObjectStore(bucketName)
+	if err == nil {
+		logging.Info(c.logger, "msg", fmt.Sprintf("Bucket already exists: %s", bucketName))
+		return nil, ErrBucketAlreadyExists
+	} else if !errors.Is(err, nats.ErrStreamNotFound) {
+		logging.Error(c.logger, "msg", "Unexpected Error at ObjectStore (existence check)", "err", err)
 		return nil, err
 	}
 
