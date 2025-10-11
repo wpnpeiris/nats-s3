@@ -1,12 +1,14 @@
 package metrics
 
 import (
+	"context"
 	"github.com/gorilla/mux"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestMetricsEndpoint(t *testing.T) {
@@ -16,7 +18,9 @@ func TestMetricsEndpoint(t *testing.T) {
 	ts := httptest.NewServer(router)
 	defer ts.Close()
 
-	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, ts.URL+path, nil)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, ts.URL+path, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
