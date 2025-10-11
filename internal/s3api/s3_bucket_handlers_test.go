@@ -110,3 +110,32 @@ func TestCreateBucket(t *testing.T) {
 		t.Fatalf("expected created object store %q, got error: %v", bucket, err)
 	}
 }
+
+func TestCreateBucketDuplicateFails(t *testing.T) {
+	s := startJSServer(t)
+	defer s.Shutdown()
+
+	logger := logging.NewLogger(logging.Config{Level: "debug"})
+	gw := NewS3Gateway(logger, s.ClientURL(), "", "")
+
+	r := mux.NewRouter()
+	gw.RegisterRoutes(r)
+
+	bucket := "dup-bucket"
+
+	// First create should succeed
+	req1 := httptest.NewRequest("PUT", "/"+bucket, nil)
+	rr1 := httptest.NewRecorder()
+	r.ServeHTTP(rr1, req1)
+	if rr1.Code != 200 {
+		t.Fatalf("unexpected status on first create: got %d body=%s", rr1.Code, rr1.Body.String())
+	}
+
+	// Second create should fail with conflict
+	req2 := httptest.NewRequest("PUT", "/"+bucket, nil)
+	rr2 := httptest.NewRecorder()
+	r.ServeHTTP(rr2, req2)
+	if rr2.Code != 409 {
+		t.Fatalf("expected 409 on duplicate create, got %d body=%s", rr2.Code, rr2.Body.String())
+	}
+}
