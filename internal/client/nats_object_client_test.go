@@ -3,26 +3,15 @@ package client
 import (
 	"bytes"
 	"github.com/wpnpeiris/nats-s3/internal/logging"
+	"github.com/wpnpeiris/nats-s3/internal/testutil"
 	"testing"
 	"time"
 
-	"github.com/nats-io/nats-server/v2/server"
-	nservertest "github.com/nats-io/nats-server/v2/test"
 	"github.com/nats-io/nats.go"
 )
 
-// startJSServer starts an in-process NATS Server with JetStream enabled.
-func startJSServer(t *testing.T) *server.Server {
-	t.Helper()
-	opts := nservertest.DefaultTestOptions
-	opts.Port = server.RANDOM_PORT
-	opts.JetStream = true
-	s := nservertest.RunServer(&opts)
-	return s
-}
-
 func TestNatsObjectClient_BasicCRUD(t *testing.T) {
-	s := startJSServer(t)
+	s := testutil.StartJSServer(t)
 	defer s.Shutdown()
 
 	url := s.ClientURL()
