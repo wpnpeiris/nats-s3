@@ -22,9 +22,8 @@ const (
 	maxPartsList   = 10000 // Max number of parts in a listPartsResponse.
 
 	// S3-compatible size limits
-	maxSinglePutSize = 5 * 1024 * 1024 * 1024 // 5GB (S3 single PUT limit)
-	maxPartSize      = 5 * 1024 * 1024 * 1024 // 5GB per part (S3 multipart limit)
-	maxXMLBodySize   = 1 * 1024 * 1024        // 1MB for XML request bodies
+	maxPartSize    = 5 * 1024 * 1024 * 1024 // 5GB per part (S3 multipart limit)
+	maxXMLBodySize = 1 * 1024 * 1024        // 1MB for XML request bodies
 )
 
 // InitiateMultipartUpload creates a new multipart upload session for the given
