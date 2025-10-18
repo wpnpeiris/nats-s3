@@ -29,11 +29,6 @@ func (s *S3Gateway) InitiateMultipartUpload(w http.ResponseWriter, r *http.Reque
 	bucket := mux.Vars(r)["bucket"]
 	key := mux.Vars(r)["key"]
 
-	if bucket == "" || key == "" {
-		model.WriteErrorResponse(w, r, model.ErrInvalidRequest)
-		return
-	}
-
 	err := s.client.InitMultipartUpload(bucket, key, uploadID)
 	if err != nil {
 		model.WriteErrorResponse(w, r, model.ErrInternalError)
@@ -67,7 +62,8 @@ func (s *S3Gateway) UploadPart(w http.ResponseWriter, r *http.Request) {
 	bucket := mux.Vars(r)["bucket"]
 	key := mux.Vars(r)["key"]
 	uploadID := r.URL.Query().Get("uploadId")
-	if bucket == "" || key == "" || uploadID == "" {
+
+	if uploadID == "" {
 		model.WriteErrorResponse(w, r, model.ErrNoSuchUpload)
 		return
 	}
@@ -100,7 +96,8 @@ func (s *S3Gateway) CompleteMultipartUpload(w http.ResponseWriter, r *http.Reque
 	bucket := mux.Vars(r)["bucket"]
 	key := mux.Vars(r)["key"]
 	uploadID := r.URL.Query().Get("uploadId")
-	if bucket == "" || key == "" || uploadID == "" {
+
+	if uploadID == "" {
 		model.WriteErrorResponse(w, r, model.ErrNoSuchUpload)
 		return
 	}
@@ -132,7 +129,8 @@ func (s *S3Gateway) AbortMultipartUpload(w http.ResponseWriter, r *http.Request)
 	bucket := mux.Vars(r)["bucket"]
 	key := mux.Vars(r)["key"]
 	uploadID := r.URL.Query().Get("uploadId")
-	if bucket == "" || key == "" || uploadID == "" {
+
+	if uploadID == "" {
 		model.WriteErrorResponse(w, r, model.ErrNoSuchUpload)
 		return
 	}
@@ -152,7 +150,8 @@ func (s *S3Gateway) ListParts(w http.ResponseWriter, r *http.Request) {
 	key := mux.Vars(r)["key"]
 	uploadID := r.URL.Query().Get("uploadId")
 	partNumberMarker, _ := strconv.Atoi(r.URL.Query().Get("part-number-marker"))
-	if bucket == "" || key == "" || uploadID == "" {
+
+	if uploadID == "" {
 		model.WriteErrorResponse(w, r, model.ErrNoSuchUpload)
 		return
 	}
