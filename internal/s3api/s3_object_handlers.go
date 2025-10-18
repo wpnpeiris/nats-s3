@@ -198,9 +198,31 @@ func updateContentTypeHeaders(obj *nats.ObjectInfo, w http.ResponseWriter) {
 func (s *S3Gateway) Upload(w http.ResponseWriter, r *http.Request) {
 	bucket := mux.Vars(r)["bucket"]
 	key := mux.Vars(r)["key"]
-	body, err := io.ReadAll(r.Body)
+
+	// S3-compatible size limit: 5GB for single PUT operation
+	const maxSinglePutSize = 5 * 1024 * 1024 * 1024
+
+	// Validate Content-Length to prevent DoS attacks
+	if r.ContentLength < 0 {
+		model.WriteErrorResponse(w, r, model.ErrMissingFields)
+		return
+	}
+	if r.ContentLength > maxSinglePutSize {
+		model.WriteErrorResponse(w, r, model.ErrEntityTooLarge)
+		return
+	}
+
+	// Use LimitReader as defense-in-depth to ensure we never read more than maxSinglePutSize
+	limitedBody := io.LimitReader(r.Body, maxSinglePutSize+1)
+	body, err := io.ReadAll(limitedBody)
 	if err != nil {
-		http.Error(w, "Bad Request", http.StatusBadRequest)
+		model.WriteErrorResponse(w, r, model.ErrInternalError)
+		return
+	}
+
+	// Additional check: if we read more than expected, reject the request
+	if int64(len(body)) > maxSinglePutSize {
+		model.WriteErrorResponse(w, r, model.ErrEntityTooLarge)
 		return
 	}
 

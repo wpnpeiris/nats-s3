@@ -58,11 +58,11 @@ type MultiPartStore struct {
 	tempPartStore nats.ObjectStore
 }
 
-func newMultiPartStore(logger log.Logger, c *Client) *MultiPartStore {
+func newMultiPartStore(logger log.Logger, c *Client) (*MultiPartStore, error) {
 	nc := c.NATS()
 	js, err := nc.JetStream()
 	if err != nil {
-		panic("Failed to create to multipart session store when nc.JetStream()")
+		return nil, fmt.Errorf("failed to create multipart session store when calling nc.JetStream(): %w", err)
 	}
 
 	kv, err := js.KeyValue(MultiPartSessionStoreName)
@@ -72,24 +72,24 @@ func newMultiPartStore(logger log.Logger, c *Client) *MultiPartStore {
 				Bucket: MultiPartSessionStoreName,
 			})
 			if err != nil {
-				panic("Failed to create to multipart session store when js.CreateKeyValue()")
+				return nil, fmt.Errorf("failed to create multipart session store when calling js.CreateKeyValue(): %w", err)
 			}
 		} else {
-			panic("Failed to create to multipart session store when js.KeyValue()")
+			return nil, fmt.Errorf("failed to access multipart session store when calling js.KeyValue(): %w", err)
 		}
 	}
 
 	os, err := js.ObjectStore(MultiPartTempStoreName)
-	if err != nil && errors.Is(err, nats.ErrStreamNotFound) {
+	if err != nil {
 		if errors.Is(err, nats.ErrStreamNotFound) {
 			os, err = js.CreateObjectStore(&nats.ObjectStoreConfig{
 				Bucket: MultiPartTempStoreName,
 			})
 			if err != nil {
-				panic("Failed to create to multipart temp store when js.CreateObjectStore()")
+				return nil, fmt.Errorf("failed to create multipart temp store when calling js.CreateObjectStore(): %w", err)
 			}
 		} else {
-			panic("Failed to create to multipart temp store when js.ObjectStore()")
+			return nil, fmt.Errorf("failed to access multipart temp store when calling js.ObjectStore(): %w", err)
 		}
 	}
 
@@ -97,7 +97,7 @@ func newMultiPartStore(logger log.Logger, c *Client) *MultiPartStore {
 		logger:        logger,
 		sessionStore:  kv,
 		tempPartStore: os,
-	}
+	}, nil
 }
 
 // createUploadMeta persists the given session value at the provided key in the
@@ -209,13 +209,16 @@ type NatsObjectClient struct {
 	multiPartStore *MultiPartStore
 }
 
-func NewNatsObjectClient(logger log.Logger, natsClient *Client) *NatsObjectClient {
-	mps := newMultiPartStore(logger, natsClient)
+func NewNatsObjectClient(logger log.Logger, natsClient *Client) (*NatsObjectClient, error) {
+	mps, err := newMultiPartStore(logger, natsClient)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize multipart store: %w", err)
+	}
 	return &NatsObjectClient{
 		logger:         logger,
 		client:         natsClient,
 		multiPartStore: mps,
-	}
+	}, nil
 }
 
 // IsConnected checks if NATS is connected

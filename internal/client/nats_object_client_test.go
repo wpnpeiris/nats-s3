@@ -40,7 +40,10 @@ func TestNatsObjectClient_BasicCRUD(t *testing.T) {
 	}
 
 	logger := logging.NewLogger(logging.Config{Level: "debug"})
-	oc := NewNatsObjectClient(logger, c)
+	oc, err := NewNatsObjectClient(logger, c)
+	if err != nil {
+		t.Fatalf("NewNatsObjectClient failed: %v", err)
+	}
 
 	// Put
 	info, err := oc.PutObject(bucket, key, "text/plain", map[string]string{"k": "v"}, data)

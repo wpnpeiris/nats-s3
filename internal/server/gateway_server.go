@@ -18,9 +18,13 @@ type GatewayServer struct {
 }
 
 // NewGatewayServer constructs a server that exposes the S3 API backed by NATS.
-func NewGatewayServer(logger log.Logger, natsServers string, natsUser string, natsPassword string) (gatewayServer *GatewayServer) {
-	s3Gateway := s3api.NewS3Gateway(logger, natsServers, natsUser, natsPassword)
-	return &GatewayServer{logger, s3Gateway}
+// Returns an error if initialization fails (e.g., cannot connect to NATS).
+func NewGatewayServer(logger log.Logger, natsServers string, natsUser string, natsPassword string) (*GatewayServer, error) {
+	s3Gateway, err := s3api.NewS3Gateway(logger, natsServers, natsUser, natsPassword)
+	if err != nil {
+		return nil, err
+	}
+	return &GatewayServer{logger, s3Gateway}, nil
 }
 
 // Start starts the HTTP server and blocks until it exits.
