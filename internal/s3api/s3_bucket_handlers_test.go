@@ -16,8 +16,7 @@ func TestListBuckets(t *testing.T) {
 	defer s.Shutdown()
 
 	logger := logging.NewLogger(logging.Config{Level: "debug"})
-	credStore := newMockCredentialStore()
-	gw, err := NewS3Gateway(logger, s.ClientURL(), "", "", credStore)
+	gw, err := NewS3Gateway(logger, s.ClientURL(), "", "", nil)
 	if err != nil {
 		t.Fatalf("failed to create S3 gateway: %v", err)
 	}
@@ -76,8 +75,7 @@ func TestCreateBucket(t *testing.T) {
 	defer s.Shutdown()
 
 	logger := logging.NewLogger(logging.Config{Level: "debug"})
-	credStore := newMockCredentialStore()
-	gw, err := NewS3Gateway(logger, s.ClientURL(), "", "", credStore)
+	gw, err := NewS3Gateway(logger, s.ClientURL(), "", "", nil)
 	if err != nil {
 		t.Fatalf("failed to create S3 gateway: %v", err)
 	}
@@ -113,8 +111,7 @@ func TestCreateBucketDuplicateFails(t *testing.T) {
 	defer s.Shutdown()
 
 	logger := logging.NewLogger(logging.Config{Level: "debug"})
-	credStore := newMockCredentialStore()
-	gw, err := NewS3Gateway(logger, s.ClientURL(), "", "", credStore)
+	gw, err := NewS3Gateway(logger, s.ClientURL(), "", "", nil)
 	if err != nil {
 		t.Fatalf("failed to create S3 gateway: %v", err)
 	}
