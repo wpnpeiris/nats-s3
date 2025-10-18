@@ -21,7 +21,7 @@ const (
 	maxUploadsList = 10000 // Max number of uploads in a listUploadsResponse.
 	maxPartsList   = 10000 // Max number of parts in a listPartsResponse.
 
-	// S3-compatible size limits to prevent DoS attacks
+	// S3-compatible size limits
 	maxSinglePutSize = 5 * 1024 * 1024 * 1024 // 5GB (S3 single PUT limit)
 	maxPartSize      = 5 * 1024 * 1024 * 1024 // 5GB per part (S3 multipart limit)
 	maxXMLBodySize   = 1 * 1024 * 1024        // 1MB for XML request bodies
@@ -80,7 +80,7 @@ func (s *S3Gateway) UploadPart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate Content-Length to prevent DoS attacks
+	// Validate Content-Length
 	if r.ContentLength < 0 {
 		model.WriteErrorResponse(w, r, model.ErrMissingFields)
 		return
@@ -124,7 +124,6 @@ func (s *S3Gateway) CompleteMultipartUpload(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	// Validate Content-Length for XML body to prevent DoS attacks
 	if r.ContentLength < 0 {
 		model.WriteErrorResponse(w, r, model.ErrMissingFields)
 		return
@@ -135,7 +134,6 @@ func (s *S3Gateway) CompleteMultipartUpload(w http.ResponseWriter, r *http.Reque
 	}
 
 	parts := &model.CompleteMultipartUpload{}
-	// Use the smaller of ContentLength or maxXMLBodySize to limit XML parsing
 	xmlSize := r.ContentLength
 	if xmlSize > maxXMLBodySize {
 		xmlSize = maxXMLBodySize
