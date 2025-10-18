@@ -241,9 +241,13 @@ func buildCanonicalURI(r *http.Request) string {
 func buildCanonicalQueryString(r *http.Request) string {
 	var canQuery string
 	{
-		// Copy query and for header-based remove the X-Amz-* if any exist but typically none
+		// Copy query parameters, excluding X-Amz-Signature for presigned URLs
 		qp := url.Values{}
 		for k, vs := range r.URL.Query() {
+			// Exclude X-Amz-Signature as it's not part of the canonical request for presigned URLs
+			if k == "X-Amz-Signature" {
+				continue
+			}
 			for _, v := range vs {
 				qp.Add(k, v)
 			}
