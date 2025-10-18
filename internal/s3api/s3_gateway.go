@@ -10,6 +10,7 @@ import (
 	"github.com/nats-io/nats.go"
 	"github.com/wpnpeiris/nats-s3/internal/auth"
 	"github.com/wpnpeiris/nats-s3/internal/client"
+	"github.com/wpnpeiris/nats-s3/internal/credential"
 	"github.com/wpnpeiris/nats-s3/internal/logging"
 	"github.com/wpnpeiris/nats-s3/internal/metrics"
 	"github.com/wpnpeiris/nats-s3/internal/validation"
@@ -26,12 +27,10 @@ type S3Gateway struct {
 
 // NewS3Gateway creates a gateway instance and establishes a connection to
 // NATS using the given servers and credentials. Returns an error if initialization fails.
-func NewS3Gateway(logger log.Logger, natsServers string, natsUser string, natsPassword string) (*S3Gateway, error) {
+func NewS3Gateway(logger log.Logger, natsServers string, natsUser string, natsPassword string, credStore credential.Store) (*S3Gateway, error) {
 	var natsOptions []nats.Option
-	var credential auth.Credential
 	if natsUser != "" && natsPassword != "" {
 		natsOptions = append(natsOptions, nats.UserInfo(natsUser, natsPassword))
-		credential = auth.NewCredential(natsUser, natsPassword)
 	}
 
 	natsClient := client.NewClient("s3-gateway")
@@ -53,7 +52,7 @@ func NewS3Gateway(logger log.Logger, natsServers string, natsUser string, natsPa
 
 	return &S3Gateway{
 		client:  oc,
-		iam:     auth.NewIdentityAccessManagement(credential),
+		iam:     auth.NewIdentityAccessManagement(credStore),
 		started: time.Now().UTC(),
 	}, nil
 }

@@ -51,21 +51,33 @@ Follow these steps to spin up NATS-S3, integrated with NATS server, and use AWS 
 
 2) Start NATS (with JetStream) via Docker
 ```bash
-docker run -p 4222:4222 -ti nats:latest -js --user my-access-key --pass my-secret-key
+docker run -p 4222:4222 -ti nats:latest -js
 ```
 
-3) Start the nats-s3 gateway
-- Choose a single access/secret pair. These map to NATS username/password and AWS access/secret.
+3) Create a credentials file
+```bash
+cat > credentials.json <<EOF
+{
+  "credentials": [
+    {
+      "accessKey": "my-access-key",
+      "secretKey": "my-secret-key"
+    }
+  ]
+}
+EOF
+```
+
+4) Start the nats-s3 gateway
 ```bash
 # In a separate terminal
 ./nats-s3 \
   --listen 0.0.0.0:5222 \
   --natsServers nats://127.0.0.1:4222 \
-  --natsUser my-access-key \
-  --natsPassword my-secret-key
+  --s3.credentials credentials.json
 ```
 
-4) Configure your AWS CLI to use the same credentials
+5) Configure your AWS CLI to use the same credentials
 ```bash
 export AWS_ACCESS_KEY_ID=my-access-key
 export AWS_SECRET_ACCESS_KEY=my-secret-key
@@ -73,33 +85,33 @@ export AWS_SECRET_ACCESS_KEY=my-secret-key
 export AWS_DEFAULT_REGION=us-east-1
 ```
 
-5) Create a bucket
+6) Create a bucket
 ```bash
 aws s3 mb s3://bucket1 --endpoint-url=http://localhost:5222
 ```
 
-6) List buckets
+7) List buckets
 ```bash
 aws s3 ls --endpoint-url=http://localhost:5222
 ```
 
-7) Put an object
+8) Put an object
 ```bash
 echo "hello world" > file.txt
 aws s3 cp file.txt s3://bucket1/hello.txt --endpoint-url=http://localhost:5222
 ```
 
-8) List bucket contents
+9) List bucket contents
 ```bash
 aws s3 ls s3://bucket1 --endpoint-url=http://localhost:5222
 ```
 
-9) Download the object
+10) Download the object
 ```bash
 aws s3 cp s3://bucket1/hello.txt ./hello_copy.txt --endpoint-url=http://localhost:5222
 ```
 
-10) Delete the object
+11) Delete the object
 ```bash
 aws s3 rm s3://bucket1/hello.txt --endpoint-url=http://localhost:5222
 ```
@@ -122,14 +134,18 @@ Run
 ./nats-s3 \
   --listen 0.0.0.0:5222 \
   --natsServers nats://127.0.0.1:4222 \
-  --natsUser "" \
-  --natsPassword ""
+  --s3.credentials credentials.json
 ```
 
 Flags
 - `--listen`: HTTP bind address for the S3 gateway (default `0.0.0.0:5222`).
 - `--natsServers`: Comma‑separated NATS server URLs (default from `nats.DefaultURL`).
-- `--natsUser`, `--natsPassword`: Optional NATS credentials.
+- `--natsUser`, `--natsPassword`: Optional NATS credentials for connecting to NATS server.
+- `--s3.credentials`: Path to S3 credentials file (JSON format, required).
+- `--http.read-timeout`: HTTP server read timeout (default 15m).
+- `--http.write-timeout`: HTTP server write timeout (default 15m).
+- `--http.idle-timeout`: HTTP server idle timeout (default 120s).
+- `--http.read-header-timeout`: HTTP server read header timeout (default 30s).
 
 ### Coverage
 Generate coverage profile and HTML report locally:
@@ -167,14 +183,16 @@ Run with a locally running NATS on the same Docker network
 
 # Start NATS (JetStream) on the host network
 docker run --network host -p 4222:4222 \
-  nats:latest -js --user my-access-key --pass my-secret-key
+  nats:latest -js
 
 # Start nats-s3 and expose port 5222
-docker run --network host -p 5222:5222 nats-s3:latest \
+# Note: Mount credentials.json file into the container
+docker run --network host -p 5222:5222 \
+  -v $(pwd)/credentials.json:/credentials.json \
+  nats-s3:latest \
   --listen 0.0.0.0:5222 \
   --natsServers nats://127.0.0.1:4222 \
-  --natsUser my-access-key \
-  --natsPassword my-secret-key
+  --s3.credentials /credentials.json
 ```
 
 Test with AWS CLI
@@ -197,16 +215,17 @@ docker pull ghcr.io/wpnpeiris/nats-s3:${IMAGE_TAG}
 
 Run against a host‑running NATS (portable across OSes)
 ```bash
-# Start NATS locally (JetStream enabled) with credentials
+# Start NATS locally (JetStream enabled)
 docker run --network host -p 4222:4222 \
-  nats:latest -js --user my-access-key --pass my-secret-key
+  nats:latest -js
 
 # Start nats-s3 and point to the host via host-gateway
-docker run --network host -p 5222:5222 ghcr.io/wpnpeiris/nats-s3:${IMAGE_TAG} \
+docker run --network host -p 5222:5222 \
+  -v $(pwd)/credentials.json:/credentials.json \
+  ghcr.io/wpnpeiris/nats-s3:${IMAGE_TAG} \
   --listen 0.0.0.0:5222 \
   --natsServers nats://127.0.0.1:4222 \
-  --natsUser my-access-key \
-  --natsPassword my-secret-key
+  --s3.credentials /credentials.json
 ```
 
 Test with AWS CLI
@@ -219,40 +238,61 @@ aws s3 ls --endpoint-url=http://localhost:5222
 ```
 
 ## Authentication
-nats-s3 uses AWS Signature Version 4 (SigV4) for every S3 request. The gateway is
-configured with a single NATS username/password pair, and that same pair is used as
-the AWS Access Key ID and Secret Access Key for S3 authentication.
+nats-s3 uses AWS Signature Version 4 (SigV4) for S3 API authentication. The gateway
+loads credentials from a JSON file and supports multiple users.
 
-How it works
-- Start the gateway with NATS credentials:
-  - `--natsUser` is treated as the AWS Access Key ID.
-  - `--natsPassword` is treated as the AWS Secret Access Key.
-- Clients sign S3 requests using SigV4 with those credentials.
-- The gateway verifies the SigV4 signature and, on success, processes the request.
+### Credential Store
 
-Server example
+The credential store is a JSON file containing one or more AWS-style access/secret key pairs:
+
+```json
+{
+  "credentials": [
+    {
+      "accessKey": "AKIAIOSFODNN7EXAMPLE",
+      "secretKey": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+    },
+    {
+      "accessKey": "AKIAI44QH8DHBEXAMPLE",
+      "secretKey": "je7MtGbClwBF/2Zp9Utk/h3yCo8nvbEXAMPLEKEY"
+    }
+  ]
+}
+```
+
+Requirements:
+- Access keys must be at least 3 characters
+- Secret keys must be at least 8 characters
+- Access keys cannot contain reserved characters (`=` or `,`)
+- Each access key must be unique
+
+See `credentials.example.json` for a complete example.
+
+### How it works
+1. Start the gateway with a credentials file:
 ```shell
 ./nats-s3 \
   --listen 0.0.0.0:5222 \
   --natsServers nats://127.0.0.1:4222 \
-  --natsUser my-access-key \
-  --natsPassword my-secret-key
+  --s3.credentials credentials.json
 ```
 
-Client example (AWS CLI)
+2. Clients sign S3 requests using SigV4 with any valid credential from the file:
 ```shell
-export AWS_ACCESS_KEY_ID=my-access-key
-export AWS_SECRET_ACCESS_KEY=my-secret-key
+export AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE
+export AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+export AWS_DEFAULT_REGION=us-east-1
 
-# Pick any region (SigV4 requires a region in the scope; us-east-1 is common)
-aws s3 ls --endpoint-url=http://localhost:5222 --region us-east-1
+aws s3 ls --endpoint-url=http://localhost:5222
 ```
 
-Notes
+3. The gateway verifies the SigV4 signature and, on success, processes the request.
+
+### Notes
 - Both header-based SigV4 and presigned URLs (query-string SigV4) are supported.
 - Time skew of ±5 minutes is allowed; presigned URLs honor X-Amz-Expires.
-- Only a single credential pair is supported at this time; requests must use the
-  same AccessKey/Secret configured on the gateway.
+- Multiple users can share the same gateway, each with their own credentials.
+- NATS server authentication (`--natsUser`/`--natsPassword`) is independent from S3 credentials.
 
 ## Roadmap & Contributing
 - See [ROADMAP.md](ROADMAP.md) for planned milestones.

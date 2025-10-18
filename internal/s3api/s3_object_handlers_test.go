@@ -18,7 +18,8 @@ func TestObjectHandlers_CRUD(t *testing.T) {
 	defer s.Shutdown()
 
 	logger := logging.NewLogger(logging.Config{Level: "debug"})
-	gw, err := NewS3Gateway(logger, s.ClientURL(), "", "")
+	credStore := newMockCredentialStore()
+	gw, err := NewS3Gateway(logger, s.ClientURL(), "", "", credStore)
 	if err != nil {
 		t.Fatalf("failed to create S3 gateway: %v", err)
 	}

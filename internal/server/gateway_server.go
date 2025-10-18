@@ -7,6 +7,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/gorilla/mux"
+	"github.com/wpnpeiris/nats-s3/internal/credential"
 	"github.com/wpnpeiris/nats-s3/internal/logging"
 	"github.com/wpnpeiris/nats-s3/internal/metrics"
 	"github.com/wpnpeiris/nats-s3/internal/s3api"
@@ -28,8 +29,8 @@ type GatewayServer struct {
 
 // NewGatewayServer constructs a server that exposes the S3 API backed by NATS.
 // Returns an error if initialization fails (e.g., cannot connect to NATS).
-func NewGatewayServer(logger log.Logger, natsServers string, natsUser string, natsPassword string) (*GatewayServer, error) {
-	s3Gateway, err := s3api.NewS3Gateway(logger, natsServers, natsUser, natsPassword)
+func NewGatewayServer(logger log.Logger, natsServers string, natsUser string, natsPassword string, credStore credential.Store) (*GatewayServer, error) {
+	s3Gateway, err := s3api.NewS3Gateway(logger, natsServers, natsUser, natsPassword, credStore)
 	if err != nil {
 		return nil, err
 	}
