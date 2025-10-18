@@ -2,6 +2,7 @@ package s3api
 
 import (
 	"github.com/wpnpeiris/nats-s3/internal/logging"
+	"github.com/wpnpeiris/nats-s3/internal/testutil"
 	"net/http/httptest"
 	"testing"
 
@@ -9,7 +10,7 @@ import (
 )
 
 func TestHealthz_OK(t *testing.T) {
-	s := startJSServer(t)
+	s := testutil.StartJSServer(t)
 	defer s.Shutdown()
 
 	logger := logging.NewLogger(logging.Config{Level: "debug"})

@@ -5,6 +5,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"github.com/wpnpeiris/nats-s3/internal/logging"
+	"github.com/wpnpeiris/nats-s3/internal/testutil"
 	"net/http/httptest"
 	"testing"
 
@@ -20,7 +21,7 @@ type initResp struct {
 }
 
 func TestInitiateMultipartUpload_SucceedsAndPersistsSession(t *testing.T) {
-	s := startJSServer(t)
+	s := testutil.StartJSServer(t)
 	defer s.Shutdown()
 
 	logger := logging.NewLogger(logging.Config{Level: "debug"})
@@ -57,7 +58,7 @@ func TestInitiateMultipartUpload_SucceedsAndPersistsSession(t *testing.T) {
 }
 
 func TestListParts_PaginatesDeterministically(t *testing.T) {
-	s := startJSServer(t)
+	s := testutil.StartJSServer(t)
 	defer s.Shutdown()
 
 	logger := logging.NewLogger(logging.Config{Level: "debug"})
@@ -143,7 +144,7 @@ func TestListParts_PaginatesDeterministically(t *testing.T) {
 }
 
 func TestListParts_NoParts(t *testing.T) {
-	s := startJSServer(t)
+	s := testutil.StartJSServer(t)
 	defer s.Shutdown()
 
 	logger := logging.NewLogger(logging.Config{Level: "debug"})
@@ -188,7 +189,7 @@ func TestListParts_NoParts(t *testing.T) {
 }
 
 func TestListParts_MarkerBeyondLast(t *testing.T) {
-	s := startJSServer(t)
+	s := testutil.StartJSServer(t)
 	defer s.Shutdown()
 
 	logger := logging.NewLogger(logging.Config{Level: "debug"})
@@ -245,7 +246,7 @@ func TestListParts_MarkerBeyondLast(t *testing.T) {
 }
 
 func TestListParts_NonContiguousParts(t *testing.T) {
-	s := startJSServer(t)
+	s := testutil.StartJSServer(t)
 	defer s.Shutdown()
 
 	logger := logging.NewLogger(logging.Config{Level: "debug"})

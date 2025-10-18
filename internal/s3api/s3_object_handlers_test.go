@@ -3,6 +3,7 @@ package s3api
 import (
 	"encoding/xml"
 	"github.com/wpnpeiris/nats-s3/internal/logging"
+	"github.com/wpnpeiris/nats-s3/internal/testutil"
 	"io"
 	"net/http/httptest"
 	"strings"
@@ -13,7 +14,7 @@ import (
 )
 
 func TestObjectHandlers_CRUD(t *testing.T) {
-	s := startJSServer(t)
+	s := testutil.StartJSServer(t)
 	defer s.Shutdown()
 
 	logger := logging.NewLogger(logging.Config{Level: "debug"})

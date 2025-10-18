@@ -3,27 +3,16 @@ package s3api
 import (
 	"encoding/xml"
 	"github.com/wpnpeiris/nats-s3/internal/logging"
+	"github.com/wpnpeiris/nats-s3/internal/testutil"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/gorilla/mux"
-	"github.com/nats-io/nats-server/v2/server"
-	nservertest "github.com/nats-io/nats-server/v2/test"
 	"github.com/nats-io/nats.go"
 )
 
-// helper to start a JetStream-enabled NATS server
-func startJSServer(t *testing.T) *server.Server {
-	t.Helper()
-	opts := nservertest.DefaultTestOptions
-	opts.Port = server.RANDOM_PORT
-	opts.JetStream = true
-	s := nservertest.RunServer(&opts)
-	return s
-}
-
 func TestListBuckets(t *testing.T) {
-	s := startJSServer(t)
+	s := testutil.StartJSServer(t)
 	defer s.Shutdown()
 
 	logger := logging.NewLogger(logging.Config{Level: "debug"})
@@ -79,7 +68,7 @@ func TestListBuckets(t *testing.T) {
 }
 
 func TestCreateBucket(t *testing.T) {
-	s := startJSServer(t)
+	s := testutil.StartJSServer(t)
 	defer s.Shutdown()
 
 	logger := logging.NewLogger(logging.Config{Level: "debug"})
@@ -112,7 +101,7 @@ func TestCreateBucket(t *testing.T) {
 }
 
 func TestCreateBucketDuplicateFails(t *testing.T) {
-	s := startJSServer(t)
+	s := testutil.StartJSServer(t)
 	defer s.Shutdown()
 
 	logger := logging.NewLogger(logging.Config{Level: "debug"})
