@@ -119,8 +119,7 @@ func (s *S3Gateway) Download(w http.ResponseWriter, r *http.Request) {
 
 	_, err = w.Write(data)
 	if err != nil {
-		log.Printf("Error writing the response, %s", err)
-		model.WriteErrorResponse(w, r, model.ErrInternalError)
+		log.Printf("Error writing response body for %s/%s: %s", bucket, key, err)
 		return
 	}
 }
