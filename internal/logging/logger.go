@@ -45,7 +45,9 @@ func NewLogger(cfg Config) log.Logger {
 	case LevelDebug:
 		lvl = level.AllowDebug()
 	default:
-		panic("unexpected log level")
+		// Default to info level for unknown/invalid configurations
+		fmt.Fprintf(os.Stderr, "WARNING: Unknown log level '%s', defaulting to 'info'\n", cfg.Level)
+		lvl = level.AllowInfo()
 	}
 
 	var logger log.Logger

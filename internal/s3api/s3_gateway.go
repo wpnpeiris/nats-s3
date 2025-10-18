@@ -1,6 +1,10 @@
 package s3api
 
 import (
+	"fmt"
+	"net/http"
+	"time"
+
 	"github.com/go-kit/log"
 	"github.com/gorilla/mux"
 	"github.com/nats-io/nats.go"
@@ -9,8 +13,6 @@ import (
 	"github.com/wpnpeiris/nats-s3/internal/logging"
 	"github.com/wpnpeiris/nats-s3/internal/metrics"
 	"github.com/wpnpeiris/nats-s3/internal/validation"
-	"net/http"
-	"time"
 )
 
 // S3Gateway registers S3-compatible HTTP routes (2006-03-01) and delegates
@@ -23,8 +25,8 @@ type S3Gateway struct {
 }
 
 // NewS3Gateway creates a gateway instance and establishes a connection to
-// NATS using the given servers and credentials.
-func NewS3Gateway(logger log.Logger, natsServers string, natsUser string, natsPassword string) *S3Gateway {
+// NATS using the given servers and credentials. Returns an error if initialization fails.
+func NewS3Gateway(logger log.Logger, natsServers string, natsUser string, natsPassword string) (*S3Gateway, error) {
 	var natsOptions []nats.Option
 	var credential auth.Credential
 	if natsUser != "" && natsPassword != "" {
@@ -35,10 +37,14 @@ func NewS3Gateway(logger log.Logger, natsServers string, natsUser string, natsPa
 	natsClient := client.NewClient("s3-gateway")
 	err := natsClient.SetupConnectionToNATS(natsServers, natsOptions...)
 	if err != nil {
-		panic("Failed to connect to NATS")
+		return nil, fmt.Errorf("failed to connect to NATS: %w", err)
 	}
 
-	oc := client.NewNatsObjectClient(logger, natsClient)
+	oc, err := client.NewNatsObjectClient(logger, natsClient)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize NATS object client: %w", err)
+	}
+
 	mc := client.NewMetricCollector(logger, oc)
 	err = metrics.RegisterPrometheusCollector(mc)
 	if err != nil {
@@ -49,7 +55,7 @@ func NewS3Gateway(logger log.Logger, natsServers string, natsUser string, natsPa
 		client:  oc,
 		iam:     auth.NewIdentityAccessManagement(credential),
 		started: time.Now().UTC(),
-	}
+	}, nil
 }
 
 // RegisterRoutes wires the S3 REST API endpoints onto the provided mux router.

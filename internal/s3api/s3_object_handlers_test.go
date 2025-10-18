@@ -18,7 +18,10 @@ func TestObjectHandlers_CRUD(t *testing.T) {
 	defer s.Shutdown()
 
 	logger := logging.NewLogger(logging.Config{Level: "debug"})
-	gw := NewS3Gateway(logger, s.ClientURL(), "", "")
+	gw, err := NewS3Gateway(logger, s.ClientURL(), "", "")
+	if err != nil {
+		t.Fatalf("failed to create S3 gateway: %v", err)
+	}
 
 	// Ensure bucket exists
 	natsEndpoint := s.Addr().String()

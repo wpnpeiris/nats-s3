@@ -16,7 +16,10 @@ func TestListBuckets(t *testing.T) {
 	defer s.Shutdown()
 
 	logger := logging.NewLogger(logging.Config{Level: "debug"})
-	gw := NewS3Gateway(logger, s.ClientURL(), "", "")
+	gw, err := NewS3Gateway(logger, s.ClientURL(), "", "")
+	if err != nil {
+		t.Fatalf("failed to create S3 gateway: %v", err)
+	}
 
 	// Create a couple of buckets so ListBuckets has content.
 	natsEndpoint := s.Addr().String()
@@ -72,7 +75,10 @@ func TestCreateBucket(t *testing.T) {
 	defer s.Shutdown()
 
 	logger := logging.NewLogger(logging.Config{Level: "debug"})
-	gw := NewS3Gateway(logger, s.ClientURL(), "", "")
+	gw, err := NewS3Gateway(logger, s.ClientURL(), "", "")
+	if err != nil {
+		t.Fatalf("failed to create S3 gateway: %v", err)
+	}
 
 	r := mux.NewRouter()
 	gw.RegisterRoutes(r)
@@ -105,7 +111,10 @@ func TestCreateBucketDuplicateFails(t *testing.T) {
 	defer s.Shutdown()
 
 	logger := logging.NewLogger(logging.Config{Level: "debug"})
-	gw := NewS3Gateway(logger, s.ClientURL(), "", "")
+	gw, err := NewS3Gateway(logger, s.ClientURL(), "", "")
+	if err != nil {
+		t.Fatalf("failed to create S3 gateway: %v", err)
+	}
 
 	r := mux.NewRouter()
 	gw.RegisterRoutes(r)

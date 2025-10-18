@@ -20,6 +20,11 @@ import (
 const (
 	maxUploadsList = 10000 // Max number of uploads in a listUploadsResponse.
 	maxPartsList   = 10000 // Max number of parts in a listPartsResponse.
+
+	// S3-compatible size limits to prevent DoS attacks
+	maxSinglePutSize = 5 * 1024 * 1024 * 1024 // 5GB (S3 single PUT limit)
+	maxPartSize      = 5 * 1024 * 1024 * 1024 // 5GB per part (S3 multipart limit)
+	maxXMLBodySize   = 1 * 1024 * 1024        // 1MB for XML request bodies
 )
 
 // InitiateMultipartUpload creates a new multipart upload session for the given
@@ -75,7 +80,24 @@ func (s *S3Gateway) UploadPart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	etag, err := s.client.UploadPart(bucket, key, uploadID, partNum, r.Body)
+	// Validate Content-Length to prevent DoS attacks
+	if r.ContentLength < 0 {
+		model.WriteErrorResponse(w, r, model.ErrMissingFields)
+		return
+	}
+	if r.ContentLength > maxPartSize {
+		model.WriteErrorResponse(w, r, model.ErrEntityTooLarge)
+		return
+	}
+
+	// Use LimitReader as defense-in-depth to ensure we never read more than maxPartSize
+	// Wrap it in a limitedReadCloser to satisfy io.ReadCloser interface
+	limitedBody := &limitedReadCloser{
+		Reader: io.LimitReader(r.Body, maxPartSize+1),
+		Closer: r.Body,
+	}
+
+	etag, err := s.client.UploadPart(bucket, key, uploadID, partNum, limitedBody)
 	if err != nil {
 		if errors.Is(err, client.ErrUploadNotFound) || errors.Is(err, client.ErrUploadCompleted) {
 			model.WriteErrorResponse(w, r, model.ErrNoSuchUpload)
@@ -102,8 +124,23 @@ func (s *S3Gateway) CompleteMultipartUpload(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	// Validate Content-Length for XML body to prevent DoS attacks
+	if r.ContentLength < 0 {
+		model.WriteErrorResponse(w, r, model.ErrMissingFields)
+		return
+	}
+	if r.ContentLength > maxXMLBodySize {
+		model.WriteErrorResponse(w, r, model.ErrEntityTooLarge)
+		return
+	}
+
 	parts := &model.CompleteMultipartUpload{}
-	if err := xmlDecoder(r.Body, parts, r.ContentLength); err != nil {
+	// Use the smaller of ContentLength or maxXMLBodySize to limit XML parsing
+	xmlSize := r.ContentLength
+	if xmlSize > maxXMLBodySize {
+		xmlSize = maxXMLBodySize
+	}
+	if err := xmlDecoder(r.Body, parts, xmlSize); err != nil {
 		model.WriteErrorResponse(w, r, model.ErrMalformedXML)
 		return
 	}
@@ -262,4 +299,21 @@ func xmlDecoder(body io.Reader, v interface{}, size int64) error {
 		return input, nil
 	}
 	return d.Decode(v)
+}
+
+// limitedReadCloser wraps an io.Reader with io.Closer to satisfy io.ReadCloser interface
+type limitedReadCloser struct {
+	Reader io.Reader
+	Closer io.Closer
+}
+
+func (lrc *limitedReadCloser) Read(p []byte) (n int, err error) {
+	return lrc.Reader.Read(p)
+}
+
+func (lrc *limitedReadCloser) Close() error {
+	if lrc.Closer != nil {
+		return lrc.Closer.Close()
+	}
+	return nil
 }

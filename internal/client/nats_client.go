@@ -49,7 +49,7 @@ func (c *Client) SetupConnectionToNATS(servers string, options ...nats.Option) e
 		log.Println("Reconnected to NATS!")
 	})
 	nc.SetClosedHandler(func(_ *nats.Conn) {
-		panic("Connection to NATS is closed!")
+		log.Fatal("Connection to NATS is closed! Service cannot continue.")
 	})
 
 	return err
