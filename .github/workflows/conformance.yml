@@ -48,13 +48,28 @@ jobs:
             (echo > /dev/tcp/127.0.0.1/4222) >/dev/null 2>&1 && { echo "NATS ready"; break; }; sleep 1; done
         shell: bash
 
+      - name: Create credentials file
+        run: |
+          cat > credentials.json <<EOF
+          {
+            "credentials": [
+              {
+                "accessKey": "ci-access",
+                "secretKey": "ci-secret"
+              }
+            ]
+          }
+          EOF
+        shell: bash
+
       - name: Start nats-s3 gateway
         run: |
           nohup ./bin/nats-s3 \
             --listen 0.0.0.0:5222 \
             --natsServers nats://127.0.0.1:4222 \
             --natsUser ci-access \
-            --natsPassword ci-secret > gateway.log 2>&1 &
+            --natsPassword ci-secret \
+            --s3.credentials credentials.json > gateway.log 2>&1 &
           echo $! > gateway.pid
           echo "Waiting for gateway to be ready..."
           for i in {1..30}; do
