@@ -173,7 +173,10 @@ func WriteResponse(w http.ResponseWriter, r *http.Request, statusCode int, respo
 		_, err := w.Write(response)
 		if err != nil {
 			log.Printf("Error writing the response, %s", err)
+			return
 		}
-		w.(http.Flusher).Flush()
+		if flusher, ok := w.(http.Flusher); ok {
+			flusher.Flush()
+		}
 	}
 }

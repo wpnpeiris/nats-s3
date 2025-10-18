@@ -495,6 +495,9 @@ func (c *NatsObjectClient) UploadPart(bucket string, key string, uploadID string
 	partKey := partKey(bucket, key, uploadID, part)
 	obj, err := c.multiPartStore.createPartUpload(partKey, pr)
 	if err != nil {
+		// Close the reader to signal the goroutine to stop
+		// This prevents goroutine leak if createPartUpload fails
+		_ = pr.Close()
 		return "", err
 	}
 
@@ -606,6 +609,14 @@ func (c *NatsObjectClient) CompleteMultipartUpload(bucket string, key string, up
 				_ = pw.CloseWithError(err)
 				return
 			}
+		}
+	}()
+
+	// Ensure the goroutine is cleaned up on early return
+	defer func() {
+		if err != nil {
+			// Close reader to unblock the goroutine if we're returning with an error
+			_ = pr.Close()
 		}
 	}()
 
