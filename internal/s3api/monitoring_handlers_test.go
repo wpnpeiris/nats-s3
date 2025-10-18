@@ -14,7 +14,7 @@ func TestHealthz_OK(t *testing.T) {
 	defer s.Shutdown()
 
 	logger := logging.NewLogger(logging.Config{Level: "debug"})
-	gw, err := NewS3Gateway(logger, s.ClientURL(), "", "")
+	gw, err := NewS3Gateway(logger, s.ClientURL(), "", "", nil)
 	if err != nil {
 		t.Fatalf("failed to create S3 gateway: %v", err)
 	}

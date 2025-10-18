@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/nats-io/nats.go"
+	"github.com/wpnpeiris/nats-s3/internal/credential"
 	"github.com/wpnpeiris/nats-s3/internal/logging"
 	"github.com/wpnpeiris/nats-s3/internal/server"
 )
@@ -25,6 +26,7 @@ func main() {
 		natsServers       string
 		natsUser          string
 		natsPassword      string
+		credentialsFile   string
 		logFormat         string
 		logLevel          string
 		readTimeout       time.Duration
@@ -41,6 +43,7 @@ func main() {
 	flag.StringVar(&natsServers, "natsServers", nats.DefaultURL, "List of NATS Servers to connect")
 	flag.StringVar(&natsUser, "natsUser", "", "Nats server user name")
 	flag.StringVar(&natsPassword, "natsPassword", "", "Nats server password")
+	flag.StringVar(&credentialsFile, "s3.credentials", "", "Path to S3 credentials file (JSON format)")
 	flag.StringVar(&logFormat, "log.format", "logfmt", "log output format: logfmt or json")
 	flag.StringVar(&logLevel, "log.level", "info", "log level: debug, info, warn, error")
 	flag.DurationVar(&readTimeout, "http.read-timeout", 15*time.Minute, "HTTP server read timeout (for large uploads)")
@@ -55,7 +58,21 @@ func main() {
 	})
 
 	logging.Info(logger, "mgs", fmt.Sprintf("Starting NATS S3 server... version=%s", Version))
-	gateway, err := server.NewGatewayServer(logger, natsServers, natsUser, natsPassword)
+
+	// Initialize credential store
+	if credentialsFile == "" {
+		logging.Error(logger, "msg", "Credentials file is required", "flag", "-s3.credentials")
+		os.Exit(1)
+	}
+
+	credStore, err := credential.NewStaticFileStore(credentialsFile)
+	if err != nil {
+		logging.Error(logger, "msg", "Failed to load credentials file", "file", credentialsFile, "err", err)
+		os.Exit(1)
+	}
+	logging.Info(logger, "msg", "Loaded S3 credentials", "count", credStore.Count(), "store", credStore.GetName(), "file", credentialsFile)
+
+	gateway, err := server.NewGatewayServer(logger, natsServers, natsUser, natsPassword, credStore)
 	if err != nil {
 		logging.Error(logger, "msg", "Failed to initialize NATS S3 server", "err", err)
 		os.Exit(1)

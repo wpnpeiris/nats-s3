@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"github.com/wpnpeiris/nats-s3/internal/credential"
 	"github.com/wpnpeiris/nats-s3/internal/model"
 	"net/http"
 	"net/url"
@@ -33,38 +34,22 @@ type AuthHeaderParameters struct {
 	hashedPayload string
 }
 
-// Credential holds credentials to verify in authentication
-// This should be further extend to different authentication mechanism NATS supports.
-// Credential holds a single AWS-style access/secret pair used to validate
-// SigV4 requests. The same pair maps to NATS username/password.
-type Credential struct {
-	accessKey string
-	secretKey string
-}
-
-// NewCredential constructs a Credential with the given access and secret keys.
-func NewCredential(accessKey string, secretKey string) Credential {
-	return Credential{
-		accessKey: accessKey,
-		secretKey: secretKey,
-	}
-}
-
 // IdentityAccessManagement verifies AWS SigV4 and authorizes requests using
-// a configured Credential.
+// a credential store that supports multiple users.
 type IdentityAccessManagement struct {
-	credential Credential
+	credentialStore credential.Store
 }
 
-// NewIdentityAccessManagement returns an IAM verifier bound to one credential.
-func NewIdentityAccessManagement(credential Credential) *IdentityAccessManagement {
+// NewIdentityAccessManagement returns an IAM verifier that uses a credential store
+// for multi-user authentication support.
+func NewIdentityAccessManagement(store credential.Store) *IdentityAccessManagement {
 	return &IdentityAccessManagement{
-		credential: credential,
+		credentialStore: store,
 	}
 }
 
 func (iam *IdentityAccessManagement) isDisabled() bool {
-	return iam.credential == Credential{}
+	return iam.credentialStore == nil
 }
 
 // Auth verifies AWS SigV4 (header-based and presigned URL) against the
@@ -84,7 +69,14 @@ func (iam *IdentityAccessManagement) Auth(f http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 
-		authErr = validateAuthHeaderParameters(iam.credential.accessKey, hp)
+		// Look up the secret key for the access key from the credential store
+		secretKey, found := iam.credentialStore.Get(hp.accessKey)
+		if !found {
+			model.WriteErrorResponse(w, r, model.ErrInvalidAccessKeyID)
+			return
+		}
+
+		authErr = validateAuthHeaderParameters(hp)
 		if authErr != nil {
 			model.WriteErrorResponse(w, r, authErr.code)
 			return
@@ -119,7 +111,7 @@ func (iam *IdentityAccessManagement) Auth(f http.HandlerFunc) http.HandlerFunc {
 		}, "\n")
 
 		// Derive signing key and compute signature
-		kDate := hmacSHA256([]byte("AWS4"+iam.credential.secretKey), hp.scopeDate)
+		kDate := hmacSHA256([]byte("AWS4"+secretKey), hp.scopeDate)
 		kRegion := hmacSHA256(kDate, hp.scopeRegion)
 		kService := hmacSHA256(kRegion, hp.scopeService)
 		kSigning := hmacSHA256(kService, "aws4_request")
@@ -215,14 +207,9 @@ func extractAuthHeaderParameters(r *http.Request) (*AuthHeaderParameters, *AuthE
 	return headerParams, nil
 }
 
-func validateAuthHeaderParameters(accessKey string, hp *AuthHeaderParameters) *AuthError {
+func validateAuthHeaderParameters(hp *AuthHeaderParameters) *AuthError {
 	if hp.algo != "AWS4-HMAC-SHA256" || hp.accessKey == "" || hp.signedHeaders == "" || hp.signature == "" || hp.requestTime == "" {
 		return &AuthError{model.ErrSignatureDoesNotMatch}
-	}
-
-	// Verify access key matches configured credential
-	if hp.accessKey != accessKey {
-		return &AuthError{model.ErrInvalidAccessKeyID}
 	}
 
 	// Minimal validation of scope
