@@ -126,7 +126,10 @@ func (iam *IdentityAccessManagement) Auth(f http.HandlerFunc) http.HandlerFunc {
 		sigBytes := hmacSHA256(kSigning, sts)
 		calcSig := hex.EncodeToString(sigBytes)
 
-		if !hmac.Equal([]byte(strings.ToLower(hp.signature)), []byte(strings.ToLower(calcSig))) {
+		// Constant-time comparison to prevent timing attacks.
+		// Both signatures are already lowercase (calcSig from hex.EncodeToString,
+		// hp.signature normalized during extraction).
+		if !hmac.Equal([]byte(hp.signature), []byte(calcSig)) {
 			model.WriteErrorResponse(w, r, model.ErrSignatureDoesNotMatch)
 			return
 		}
@@ -164,7 +167,8 @@ func extractAuthHeaderParameters(r *http.Request) (*AuthHeaderParameters, *AuthE
 			} else if key == "SignedHeaders" {
 				headerParams.signedHeaders = val
 			} else if key == "Signature" {
-				headerParams.signature = val
+				// Normalize to lowercase immediately to avoid timing attacks during comparison
+				headerParams.signature = strings.ToLower(val)
 			}
 		}
 		headerParams.requestTime = r.Header.Get("x-amz-date")
@@ -179,7 +183,8 @@ func extractAuthHeaderParameters(r *http.Request) (*AuthHeaderParameters, *AuthE
 		headerParams.algo = "AWS4-HMAC-SHA256"
 		headerParams.requestTime = qs.Get("X-Amz-Date")
 		headerParams.signedHeaders = qs.Get("X-Amz-SignedHeaders")
-		headerParams.signature = qs.Get("X-Amz-Signature")
+		// Normalize to lowercase immediately to avoid timing attacks during comparison
+		headerParams.signature = strings.ToLower(qs.Get("X-Amz-Signature"))
 		cred := qs.Get("X-Amz-Credential")
 		credParts := strings.Split(cred, "/")
 		if len(credParts) >= 5 {

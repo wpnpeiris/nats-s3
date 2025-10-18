@@ -8,6 +8,7 @@ import (
 	"github.com/wpnpeiris/nats-s3/internal/client"
 	"github.com/wpnpeiris/nats-s3/internal/logging"
 	"github.com/wpnpeiris/nats-s3/internal/metrics"
+	"github.com/wpnpeiris/nats-s3/internal/validation"
 	"net/http"
 	"time"
 )
@@ -54,6 +55,10 @@ func NewS3Gateway(logger log.Logger, natsServers string, natsUser string, natsPa
 // RegisterRoutes wires the S3 REST API endpoints onto the provided mux router.
 func (s *S3Gateway) RegisterRoutes(router *mux.Router) {
 	r := router.PathPrefix("/").Subrouter()
+
+	// Apply validation middleware to all routes
+	validator := &validation.RequestValidator{}
+	r.Use(validator.Validate)
 
 	// Unauthenticated monitoring endpoints
 	r.Methods(http.MethodGet).Path("/healthz").HandlerFunc(s.Healthz)
