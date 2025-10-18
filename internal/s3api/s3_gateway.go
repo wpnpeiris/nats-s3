@@ -56,7 +56,7 @@ func NewS3Gateway(logger log.Logger, natsServers string, natsUser string, natsPa
 func (s *S3Gateway) RegisterRoutes(router *mux.Router) {
 	r := router.PathPrefix("/").Subrouter()
 
-	// Apply validation middleware to all routes
+	// Apply validation to all routes
 	validator := &validation.RequestValidator{}
 	r.Use(validator.Validate)
 
