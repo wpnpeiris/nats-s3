@@ -35,9 +35,10 @@ type PartMeta struct {
 
 // UploadMeta captures the server-side state of a multipart upload session.
 // It includes identifiers (UploadID, Bucket, Key), initiation time (UTC),
-// optional owner, constraints (minimum part size and max parts), the
-// collected parts, and completion/abort flags. The JSON value is persisted
-// in a Key-Value store under a session-specific key.
+// optional owner, and constraints (minimum part size and max parts).
+// The JSON value is persisted in a Key-Value store under a session-specific key.
+// Individual part metadata is stored in separate KV entries to avoid write conflicts.
+// The Parts field is populated on-demand when calling ListParts or CompleteMultipartUpload.
 type UploadMeta struct {
 	UploadID  string           `json:"upload_id"`
 	Bucket    string           `json:"bucket"`
@@ -46,7 +47,7 @@ type UploadMeta struct {
 	Owner     string           `json:"owner,omitempty"` // optional, auth principal
 	MinPartSz int64            `json:"min_part_size"`   // default 5MiB
 	MaxParts  int              `json:"max_parts"`       // default 10000
-	Parts     map[int]PartMeta `json:"parts"`
+	Parts     map[int]PartMeta `json:"-"`               // Not persisted, populated on-demand
 }
 
 // MultiPartStore groups storage backends used for multipart uploads.
@@ -153,7 +154,7 @@ func (m *MultiPartStore) deleteUploadMeta(meta UploadMeta) error {
 // createPartUpload streams a part from the provided reader into the temporary
 // Object Store under the given part key and returns the stored object's info.
 func (m *MultiPartStore) createPartUpload(partKey string, dataReader *io.PipeReader) (*nats.ObjectInfo, error) {
-	logging.Debug(m.logger, "msg", fmt.Sprintf("creating part upload: %s", partKey))
+	logging.Debug(m.logger, "msg", fmt.Sprintf("uploading part: %s", partKey))
 	obj, err := m.tempPartStore.Put(&nats.ObjectMeta{Name: partKey}, dataReader)
 	if err != nil {
 		logging.Error(m.logger, "msg", "Error at createPartUpload when tempPartStore.Put()", "err", err)
@@ -168,6 +169,95 @@ func (m *MultiPartStore) getPartUpload(partKey string) (nats.ObjectResult, error
 	return m.tempPartStore.Get(partKey)
 }
 
+// savePartMeta stores metadata for a single part in the KV store.
+// Each part gets its own KV entry to avoid write conflicts during concurrent uploads.
+func (m *MultiPartStore) savePartMeta(bucket, key, uploadID string, partMeta PartMeta) error {
+	logging.Debug(m.logger, "msg", fmt.Sprintf("save part meta: bucket=%s key=%s uploadID=%s part=%d", bucket, key, uploadID, partMeta.Number))
+	data, err := json.Marshal(partMeta)
+	if err != nil {
+		logging.Error(m.logger, "msg", "Error at savePartMeta when json.Marshal()", "err", err)
+		return err
+	}
+	partMetaKey := partMetaKey(bucket, key, uploadID, partMeta.Number)
+	_, err = m.sessionStore.Put(partMetaKey, data)
+	if err != nil {
+		logging.Error(m.logger, "msg", "Error at savePartMeta when sessionStore.Put()", "err", err)
+		return err
+	}
+	return nil
+}
+
+// getPartMeta retrieves metadata for a single part from the KV store.
+func (m *MultiPartStore) getPartMeta(bucket, key, uploadID string, partNumber int) (*PartMeta, error) {
+	logging.Debug(m.logger, "msg", fmt.Sprintf("get part meta: bucket=%s key=%s uploadID=%s part=%d", bucket, key, uploadID, partNumber))
+	partMetaKey := partMetaKey(bucket, key, uploadID, partNumber)
+	entry, err := m.sessionStore.Get(partMetaKey)
+	if err != nil {
+		logging.Error(m.logger, "msg", "Error at getPartMeta when sessionStore.Get()", "err", err)
+		return nil, err
+	}
+	var partMeta PartMeta
+	if err := json.Unmarshal(entry.Value(), &partMeta); err != nil {
+		logging.Error(m.logger, "msg", "Error at getPartMeta when json.Unmarshal()", "err", err)
+		return nil, err
+	}
+	return &partMeta, nil
+}
+
+// getAllPartMeta retrieves all part metadata for a given upload session.
+func (m *MultiPartStore) getAllPartMeta(bucket, key, uploadID string) (map[int]PartMeta, error) {
+	logging.Debug(m.logger, "msg", fmt.Sprintf("get all part meta: bucket=%s key=%s uploadID=%s", bucket, key, uploadID))
+	prefix := partMetaPrefix(bucket, key, uploadID)
+
+	keys, err := m.sessionStore.Keys()
+	if err != nil {
+		logging.Error(m.logger, "msg", "Error at getAllPartMeta when sessionStore.Keys()", "err", err)
+		return nil, err
+	}
+
+	parts := make(map[int]PartMeta)
+	for _, kvKey := range keys {
+		if strings.HasPrefix(kvKey, prefix) {
+			entry, err := m.sessionStore.Get(kvKey)
+			if err != nil {
+				logging.Warn(m.logger, "msg", "Error getting part metadata", "key", kvKey, "err", err)
+				continue
+			}
+			var partMeta PartMeta
+			if err := json.Unmarshal(entry.Value(), &partMeta); err != nil {
+				logging.Warn(m.logger, "msg", "Error unmarshaling part metadata", "key", kvKey, "err", err)
+				continue
+			}
+			parts[partMeta.Number] = partMeta
+		}
+	}
+
+	return parts, nil
+}
+
+// deleteAllPartMeta deletes all part metadata entries for a given upload session.
+func (m *MultiPartStore) deleteAllPartMeta(bucket, key, uploadID string) error {
+	logging.Debug(m.logger, "msg", fmt.Sprintf("delete all part meta: bucket=%s key=%s uploadID=%s", bucket, key, uploadID))
+	prefix := partMetaPrefix(bucket, key, uploadID)
+
+	keys, err := m.sessionStore.Keys()
+	if err != nil {
+		logging.Error(m.logger, "msg", "Error at deleteAllPartMeta when sessionStore.Keys()", "err", err)
+		return err
+	}
+
+	for _, kvKey := range keys {
+		if strings.HasPrefix(kvKey, prefix) {
+			err := m.sessionStore.Delete(kvKey)
+			if err != nil {
+				logging.Warn(m.logger, "msg", "Error deleting part metadata", "key", kvKey, "err", err)
+			}
+		}
+	}
+
+	return nil
+}
+
 // deletePartUpload delete part from the temporary Object Store.
 func (m *MultiPartStore) deletePartUpload(partKey string) error {
 	logging.Debug(m.logger, "msg", fmt.Sprintf("delete part upload: %s", partKey))
@@ -175,11 +265,11 @@ func (m *MultiPartStore) deletePartUpload(partKey string) error {
 }
 
 // deleteAllPartUpload delete all parts from the temporary Object Store.
-func (m *MultiPartStore) deleteAllPartUpload(meta UploadMeta) error {
-	logging.Debug(m.logger, "msg", fmt.Sprintf("delete all part upload: %v", meta))
-	for pn := range meta.Parts {
-		key := partKey(meta.Bucket, meta.Key, meta.UploadID, pn)
-		err := m.tempPartStore.Delete(key)
+func (m *MultiPartStore) deleteAllPartUpload(bucket, key, uploadID string, parts map[int]PartMeta) error {
+	logging.Debug(m.logger, "msg", fmt.Sprintf("delete all part upload: bucket=%s key=%s uploadID=%s", bucket, key, uploadID))
+	for pn := range parts {
+		partKey := partKey(bucket, key, uploadID, pn)
+		err := m.tempPartStore.Delete(partKey)
 		if err != nil {
 			logging.Error(m.logger, "msg", "Error at deleteAllPartUpload when tempPartStore.Delete()", "err", err)
 			return err
@@ -460,7 +550,7 @@ func (c *NatsObjectClient) InitMultipartUpload(bucket string, key string, upload
 		Initiated: time.Now().UTC(),
 		MinPartSz: 5 * 1024 * 1024,
 		MaxParts:  10000,
-		Parts:     map[int]PartMeta{},
+		// Parts is not initialized - stored separately in KV to avoid write conflicts
 	}
 
 	return c.multiPartStore.createUploadMeta(meta)
@@ -469,7 +559,7 @@ func (c *NatsObjectClient) InitMultipartUpload(bucket string, key string, upload
 // UploadPart streams a part into temporary storage and records its ETag/size
 // under the multipart session. Returns the hex ETag (without quotes).
 func (c *NatsObjectClient) UploadPart(bucket string, key string, uploadID string, part int, dataReader io.ReadCloser) (string, error) {
-	logging.Info(c.logger, "msg", fmt.Sprintf("Upload part: [%s/%s], UploadID: %s", bucket, key, uploadID))
+	logging.Info(c.logger, "msg", fmt.Sprintf("Upload part:%06d [%s/%s], UploadID: %s", part, bucket, key, uploadID))
 	sessionKey := sessionKey(bucket, key, uploadID)
 	sessionData, err := c.multiPartStore.getUploadMeta(sessionKey)
 	if err != nil {
@@ -502,11 +592,12 @@ func (c *NatsObjectClient) UploadPart(bucket string, key string, uploadID string
 	}
 
 	etag := strings.ToLower(hex.EncodeToString(h.Sum(nil)))
-	meta.Parts[part] = PartMeta{
+	partMeta := PartMeta{
 		Number: part, ETag: `"` + etag + `"`, Size: obj.Size, StoredAt: time.Now().Unix(),
 	}
 
-	err = c.multiPartStore.saveUploadMeta(meta, sessionData.Revision())
+	// Save part metadata in its own KV entry to avoid write conflicts
+	err = c.multiPartStore.savePartMeta(bucket, key, uploadID, partMeta)
 	if err != nil {
 		return "", err
 	}
@@ -529,14 +620,30 @@ func (c *NatsObjectClient) AbortMultipartUpload(bucket string, key string, uploa
 		return err
 	}
 
-	for pn := range meta.Parts {
+	// Get all part metadata to find all parts to delete
+	parts, err := c.multiPartStore.getAllPartMeta(bucket, key, uploadID)
+	if err != nil {
+		logging.Warn(c.logger, "msg", "Error getting part metadata at AbortMultipartUpload", "err", err)
+		// Continue with cleanup even if we can't get all parts
+		parts = make(map[int]PartMeta)
+	}
+
+	// Delete temporary part data from Object Store
+	for pn := range parts {
 		partKey := partKey(bucket, key, uploadID, pn)
 		err := c.multiPartStore.deletePartUpload(partKey)
 		if err != nil {
-			logging.Error(c.logger, "msg", "Error at AbortMultipartUpload", "err", err)
+			logging.Warn(c.logger, "msg", "Error deleting part upload at AbortMultipartUpload", "err", err)
 		}
 	}
 
+	// Delete part metadata from KV store
+	err = c.multiPartStore.deleteAllPartMeta(bucket, key, uploadID)
+	if err != nil {
+		logging.Warn(c.logger, "msg", "Failed to delete part metadata at AbortMultipartUpload", "err", err)
+	}
+
+	// Delete session metadata
 	err = c.multiPartStore.deleteUploadMeta(meta)
 	if err != nil {
 		logging.Warn(c.logger, "msg", "Failed to delete multipart session data at AbortMultipartUpload", "err", err)
@@ -562,6 +669,14 @@ func (c *NatsObjectClient) ListParts(bucket string, key string, uploadID string)
 		return nil, err
 	}
 
+	// Populate parts from individual KV entries
+	parts, err := c.multiPartStore.getAllPartMeta(bucket, key, uploadID)
+	if err != nil {
+		logging.Error(c.logger, "msg", "Error at ListParts when getAllPartMeta()", "err", err)
+		return nil, err
+	}
+	meta.Parts = parts
+
 	return &meta, nil
 }
 
@@ -581,6 +696,14 @@ func (c *NatsObjectClient) CompleteMultipartUpload(bucket string, key string, up
 		logging.Error(c.logger, "msg", "Error at CompleteMultipartUpload", "err", err)
 		return "", err
 	}
+
+	// Populate parts from individual KV entries
+	parts, err := c.multiPartStore.getAllPartMeta(bucket, key, uploadID)
+	if err != nil {
+		logging.Error(c.logger, "msg", "Error at CompleteMultipartUpload when getAllPartMeta()", "err", err)
+		return "", err
+	}
+	meta.Parts = parts
 
 	md5Concat := md5.New()
 	pr, pw := io.Pipe()
@@ -643,11 +766,19 @@ func (c *NatsObjectClient) CompleteMultipartUpload(bucket string, key string, up
 	etagHex := hex.EncodeToString(md5Concat.Sum(nil))
 	finalETag := fmt.Sprintf(`"%s-%d"`, strings.ToLower(etagHex), len(sortedPartNumbers))
 
-	err = c.multiPartStore.deleteAllPartUpload(meta)
+	// Delete temporary part data from Object Store
+	err = c.multiPartStore.deleteAllPartUpload(bucket, key, uploadID, meta.Parts)
 	if err != nil {
-		logging.Warn(c.logger, "msg", "Failed to clean multipart session/temp data at CompleteMultipartUpload", "err", err)
+		logging.Warn(c.logger, "msg", "Failed to clean multipart temp part data at CompleteMultipartUpload", "err", err)
 	}
 
+	// Delete part metadata from KV store
+	err = c.multiPartStore.deleteAllPartMeta(bucket, key, uploadID)
+	if err != nil {
+		logging.Warn(c.logger, "msg", "Failed to clean multipart part metadata at CompleteMultipartUpload", "err", err)
+	}
+
+	// Delete session metadata
 	err = c.multiPartStore.deleteUploadMeta(meta)
 	if err != nil {
 		logging.Warn(c.logger, "Failed to delete multipart session data", "err", err)
@@ -665,4 +796,14 @@ func sessionKey(bucket, key, uploadID string) string {
 // partKey constructs the Object Store key for a specific uploaded part
 func partKey(bucket, key, uploadID string, part int) string {
 	return fmt.Sprintf("multi_parts/%s/%s/%s/%06d", bucket, key, uploadID, part)
+}
+
+// partMetaKey builds the KV key for a single part's metadata.
+func partMetaKey(bucket, key, uploadID string, part int) string {
+	return fmt.Sprintf("multi_parts/%s/%s/%s/parts/%06d", bucket, key, uploadID, part)
+}
+
+// partMetaPrefix returns the KV key prefix for all parts of an upload session.
+func partMetaPrefix(bucket, key, uploadID string) string {
+	return fmt.Sprintf("multi_parts/%s/%s/%s/parts/", bucket, key, uploadID)
 }
