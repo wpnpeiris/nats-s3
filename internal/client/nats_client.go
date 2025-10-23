@@ -9,8 +9,9 @@ import (
 )
 
 const (
-	MultiPartSessionStoreName = "multi_part_session"
-	MultiPartTempStoreName    = "multi_part_temp"
+	MetaStoreName     = "mp_meta"
+	PartMetaStoreName = "mp_part_meta"
+	TempStoreName     = "mp_temp"
 )
 
 // Client wraps a NATS connection and metadata used by gateway components.

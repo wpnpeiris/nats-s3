@@ -20,9 +20,10 @@ import (
 // implemented operations to NATS JetStream-backed object storage.
 // Unimplemented endpoints intentionally respond with HTTP 501 Not Implemented.
 type S3Gateway struct {
-	client  *client.NatsObjectClient
-	iam     *auth.IdentityAccessManagement
-	started time.Time
+	client         *client.NatsObjectClient
+	multiPartStore *client.MultiPartStore
+	iam            *auth.IdentityAccessManagement
+	started        time.Time
 }
 
 // NewS3Gateway creates a gateway instance and establishes a connection to
@@ -44,6 +45,11 @@ func NewS3Gateway(logger log.Logger, natsServers string, natsUser string, natsPa
 		return nil, fmt.Errorf("failed to initialize NATS object client: %w", err)
 	}
 
+	mps, err := client.NewMultiPartStore(logger, natsClient)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize multipart store: %w", err)
+	}
+
 	mc := client.NewMetricCollector(logger, oc)
 	err = metrics.RegisterPrometheusCollector(mc)
 	if err != nil {
@@ -51,9 +57,10 @@ func NewS3Gateway(logger log.Logger, natsServers string, natsUser string, natsPa
 	}
 
 	return &S3Gateway{
-		client:  oc,
-		iam:     auth.NewIdentityAccessManagement(credStore),
-		started: time.Now().UTC(),
+		client:         oc,
+		multiPartStore: mps,
+		iam:            auth.NewIdentityAccessManagement(credStore),
+		started:        time.Now().UTC(),
 	}, nil
 }
 

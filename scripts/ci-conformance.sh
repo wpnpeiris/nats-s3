@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Suppress Python BrokenPipeError warnings from AWS CLI
+export PYTHONWARNINGS="ignore::BrokenPipeError"
+
 ENDPOINT="http://localhost:5222"
 BUCKET="conformance-bucket-$(date +%s)"
 TMPDIR="$(mktemp -d)"
@@ -27,7 +30,8 @@ else
 fi
 
 # 2) List buckets should include our bucket
-if aws s3 ls --endpoint-url="$ENDPOINT" | grep -q "$BUCKET"; then
+buckets_output=$(aws s3 ls --endpoint-url="$ENDPOINT" 2>/dev/null)
+if echo "$buckets_output" | grep -q "$BUCKET"; then
   pass "aws s3 ls (service)"
 else
   fail "aws s3 ls (service)"; exit 1
@@ -42,7 +46,7 @@ else
 fi
 
 # 4) List bucket contents
-if aws s3 ls "s3://$BUCKET" --endpoint-url="$ENDPOINT" | grep -q "hello.txt"; then
+if aws s3 ls "s3://$BUCKET" --endpoint-url="$ENDPOINT" 2>/dev/null | grep -q "hello.txt"; then
   pass "aws s3 ls (bucket)"
 else
   fail "aws s3 ls (bucket)"; exit 1
