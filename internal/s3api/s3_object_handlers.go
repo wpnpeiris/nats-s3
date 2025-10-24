@@ -63,7 +63,7 @@ func (s *S3Gateway) ListObjects(w http.ResponseWriter, r *http.Request) {
 	for _, obj := range res {
 		etag := ""
 		if obj.Digest != "" {
-			etag = fmt.Sprintf("\"%s\"", obj.Digest)
+			etag = formatETag(obj.Digest)
 		}
 		contents = append(contents, s3.Object{
 			ETag:         aws.String(etag),
@@ -172,10 +172,15 @@ func updateLastModifiedHeader(obj *nats.ObjectInfo, w http.ResponseWriter) {
 	w.Header().Set("Last-Modified", obj.ModTime.UTC().Format(time.RFC1123))
 }
 
+// formatETag wraps a digest string in quotes to create an S3-compatible ETag value.
+func formatETag(digest string) string {
+	return fmt.Sprintf("\"%s\"", digest)
+}
+
 // updateETagHeader writes 'ETag' header in response
 func updateETagHeader(obj *nats.ObjectInfo, w http.ResponseWriter) {
 	if obj.Digest != "" {
-		w.Header().Set("ETag", fmt.Sprintf("\"%s\"", obj.Digest))
+		w.Header().Set("ETag", formatETag(obj.Digest))
 	}
 }
 
@@ -239,7 +244,7 @@ func (s *S3Gateway) Upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if res.Digest != "" {
-		w.Header().Set("ETag", fmt.Sprintf("\"%s\"", res.Digest))
+		w.Header().Set("ETag", formatETag(res.Digest))
 	}
 	model.WriteEmptyResponse(w, r, http.StatusOK)
 }
@@ -285,34 +290,21 @@ func (s *S3Gateway) DeleteObject(w http.ResponseWriter, r *http.Request) {
 }
 
 // CopyObject performs a server-side copy of an object from source to destination.
-// The source is specified via the x-amz-copy-source header in the format "sourcebucket/sourcekey".
-// Metadata handling is controlled by x-amz-metadata-directive header (COPY or REPLACE).
 func (s *S3Gateway) CopyObject(w http.ResponseWriter, r *http.Request) {
 	destBucket := mux.Vars(r)["bucket"]
 	destKey := mux.Vars(r)["key"]
 
-	// Parse x-amz-copy-source header (format: /sourcebucket/sourcekey or sourcebucket/sourcekey)
-	copySource := r.Header.Get("x-amz-copy-source")
-	if copySource == "" {
+	copySourceHeader := r.Header.Get("x-amz-copy-source")
+	sourceBucket, sourceKey, err := parseCopySource(copySourceHeader)
+	if err != nil {
 		model.WriteErrorResponse(w, r, model.ErrInvalidCopySource)
 		return
 	}
-
-	// Remove leading slash if present and URL decode
-	copySource = strings.TrimPrefix(copySource, "/")
-	parts := strings.SplitN(copySource, "/", 2)
-	if len(parts) != 2 {
-		model.WriteErrorResponse(w, r, model.ErrInvalidCopySource)
-		return
-	}
-
-	sourceBucket := parts[0]
-	sourceKey := parts[1]
 
 	log.Printf("CopyObject from %s/%s to %s/%s", sourceBucket, sourceKey, destBucket, destKey)
 
 	// Get source object
-	sourceInfo, sourceData, err := s.client.GetObject(sourceBucket, sourceKey)
+	sourceObj, sourceData, err := s.client.GetObject(sourceBucket, sourceKey)
 	if err != nil {
 		if errors.Is(err, client.ErrBucketNotFound) {
 			model.WriteErrorResponse(w, r, model.ErrNoSuchBucket)
@@ -326,29 +318,8 @@ func (s *S3Gateway) CopyObject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Determine metadata handling
-	metadataDirective := r.Header.Get("x-amz-metadata-directive")
-	if metadataDirective == "" {
-		metadataDirective = "COPY" // Default to COPY
-	}
-
-	var contentType string
-	var metadata map[string]string
-
-	if metadataDirective == "REPLACE" {
-		// Use metadata from the request
-		contentType = extractContentType(r)
-		metadata = extractMetadata(r)
-	} else {
-		// Copy metadata from source object
-		contentType = ""
-		if sourceInfo.Headers != nil {
-			if cts, ok := sourceInfo.Headers["Content-Type"]; ok && len(cts) > 0 {
-				contentType = cts[0]
-			}
-		}
-		metadata = sourceInfo.Metadata
-	}
+	// Determine metadata handling based on x-amz-metadata-directive
+	contentType, metadata := determineMetadataForCopy(r, sourceObj)
 
 	// Put object at destination
 	destInfo, err := s.client.PutObject(destBucket, destKey, contentType, metadata, sourceData)
@@ -363,9 +334,54 @@ func (s *S3Gateway) CopyObject(w http.ResponseWriter, r *http.Request) {
 
 	// Return CopyObjectResult XML response
 	result := CopyObjectResult{
-		ETag:         fmt.Sprintf("\"%s\"", destInfo.Digest),
+		ETag:         formatETag(destInfo.Digest),
 		LastModified: destInfo.ModTime,
 	}
 
 	model.WriteXMLResponse(w, r, http.StatusOK, result)
+}
+
+// parseCopySource extracts the source bucket and key from the x-amz-copy-source header.
+// The header format can be "/sourcebucket/sourcekey" or "sourcebucket/sourcekey".
+// Returns the source bucket, source key, and an error if the format is invalid.
+func parseCopySource(copySourceHeader string) (bucket, key string, err error) {
+	if copySourceHeader == "" {
+		return "", "", errors.New("x-amz-copy-source header is empty")
+	}
+
+	// Remove leading slash if present
+	copySource := strings.TrimPrefix(copySourceHeader, "/")
+	parts := strings.SplitN(copySource, "/", 2)
+	if len(parts) != 2 {
+		return "", "", errors.New("invalid x-amz-copy-source format: expected bucket/key")
+	}
+
+	return parts[0], parts[1], nil
+}
+
+// determineMetadataForCopy determines which metadata to use for the destination object
+// based on the x-amz-metadata-directive header (COPY or REPLACE).
+// Returns the content type and metadata map to use for the destination.
+func determineMetadataForCopy(r *http.Request, sourceObj *nats.ObjectInfo) (contentType string, metadata map[string]string) {
+	metadataDirective := r.Header.Get("x-amz-metadata-directive")
+	if metadataDirective == "" {
+		metadataDirective = "COPY" // Default to COPY
+	}
+
+	if metadataDirective == "REPLACE" {
+		// Use metadata from the request
+		contentType = extractContentType(r)
+		metadata = extractMetadata(r)
+	} else {
+		// Copy metadata from source object
+		contentType = ""
+		if sourceObj.Headers != nil {
+			if cts, ok := sourceObj.Headers["Content-Type"]; ok && len(cts) > 0 {
+				contentType = cts[0]
+			}
+		}
+		metadata = sourceObj.Metadata
+	}
+
+	return contentType, metadata
 }
