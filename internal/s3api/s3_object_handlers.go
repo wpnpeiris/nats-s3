@@ -18,13 +18,20 @@ import (
 	"github.com/gorilla/mux"
 )
 
+// PrefixEntry represents a common prefix in S3 list results.
+type PrefixEntry struct {
+	Prefix string `xml:"Prefix"`
+}
+
 // ListBucketResult is a minimal representation of S3's ListBucket result.
 type ListBucketResult struct {
-	IsTruncated bool        `xml:"IsTruncated"`
-	Contents    []s3.Object `xml:"Contents"`
-	Name        string      `xml:"Name"`
-	Prefix      string      `xml:"Prefix"`
-	MaxKeys     int         `xml:"MaxKeys"`
+	IsTruncated    bool          `xml:"IsTruncated"`
+	Contents       []s3.Object   `xml:"Contents"`
+	Name           string        `xml:"Name"`
+	Prefix         string        `xml:"Prefix"`
+	Delimiter      string        `xml:"Delimiter,omitempty"`
+	MaxKeys        int           `xml:"MaxKeys"`
+	CommonPrefixes []PrefixEntry `xml:"CommonPrefixes,omitempty"`
 }
 
 // CopyObjectResult is a compact response shape used by some S3 clients
@@ -179,6 +186,8 @@ func (s *S3Gateway) HeadObject(w http.ResponseWriter, r *http.Request) {
 // ListObjects returns objects in a bucket as a simple S3-compatible XML list.
 func (s *S3Gateway) ListObjects(w http.ResponseWriter, r *http.Request) {
 	bucket := mux.Vars(r)["bucket"]
+	delimiter := r.URL.Query().Get("delimiter")
+	prefix := r.URL.Query().Get("prefix")
 
 	log.Println("List Objects in bucket", bucket)
 
@@ -198,26 +207,24 @@ func (s *S3Gateway) ListObjects(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var contents []s3.Object
-	for _, obj := range res {
-		etag := ""
-		if obj.Digest != "" {
-			etag = formatETag(obj.Digest)
-		}
-		contents = append(contents, s3.Object{
-			ETag:         aws.String(etag),
-			Key:          aws.String(obj.Name),
-			LastModified: aws.Time(obj.ModTime),
-			Size:         aws.Int64(int64(obj.Size)),
-			StorageClass: aws.String(""),
-		})
+	var commonPrefixes []PrefixEntry
+
+	if delimiter != "" {
+		// Group objects by common prefix when delimiter is specified
+		contents, commonPrefixes = groupObjectsByDelimiter(res, prefix, delimiter)
+	} else {
+		// No delimiter: return all objects as Contents
+		contents = objectsToContents(res, prefix)
 	}
 
 	xmlResponse := ListBucketResult{
-		IsTruncated: false,
-		Contents:    contents,
-		Name:        bucket,
-		Prefix:      "",
-		MaxKeys:     1000,
+		IsTruncated:    false,
+		Contents:       contents,
+		Name:           bucket,
+		Prefix:         prefix,
+		Delimiter:      delimiter,
+		MaxKeys:        1000,
+		CommonPrefixes: commonPrefixes,
 	}
 
 	err = xml.NewEncoder(w).Encode(xmlResponse)
@@ -326,6 +333,82 @@ func extractMetadata(r *http.Request) map[string]string {
 // formatETag wraps a digest string in quotes to create an S3-compatible ETag value.
 func formatETag(digest string) string {
 	return fmt.Sprintf("\"%s\"", digest)
+}
+
+// groupObjectsByDelimiter groups objects by common prefix when a delimiter is specified.
+func groupObjectsByDelimiter(objects []*nats.ObjectInfo, prefix, delimiter string) ([]s3.Object, []PrefixEntry) {
+	var contents []s3.Object
+	prefixMap := make(map[string]bool) // Track unique prefixes
+
+	for _, obj := range objects {
+		key := obj.Name
+
+		// Filter by prefix if specified
+		if prefix != "" && !strings.HasPrefix(key, prefix) {
+			continue
+		}
+
+		// Remove the prefix to get the remaining path
+		remainingPath := key
+		if prefix != "" {
+			remainingPath = strings.TrimPrefix(key, prefix)
+		}
+
+		// Split by delimiter to check if delimiter exists in remaining path
+		parts := strings.SplitN(remainingPath, delimiter, 2)
+
+		if len(parts) == 2 {
+			// Delimiter found - add to common prefixes
+			commonPrefix := prefix + parts[0] + delimiter
+			prefixMap[commonPrefix] = true
+		} else {
+			// No delimiter - add to contents
+			etag := ""
+			if obj.Digest != "" {
+				etag = formatETag(obj.Digest)
+			}
+			contents = append(contents, s3.Object{
+				ETag:         aws.String(etag),
+				Key:          aws.String(key),
+				LastModified: aws.Time(obj.ModTime),
+				Size:         aws.Int64(int64(obj.Size)),
+				StorageClass: aws.String(""),
+			})
+		}
+	}
+
+	// Convert prefix map to sorted slice
+	var commonPrefixes []PrefixEntry
+	for p := range prefixMap {
+		commonPrefixes = append(commonPrefixes, PrefixEntry{Prefix: p})
+	}
+
+	return contents, commonPrefixes
+}
+
+// objectsToContents converts NATS ObjectInfo objects to S3 Object format.
+// Optionally filters by prefix if specified.
+func objectsToContents(objects []*nats.ObjectInfo, prefix string) []s3.Object {
+	var contents []s3.Object
+	for _, obj := range objects {
+		// Filter by prefix if specified
+		if prefix != "" && !strings.HasPrefix(obj.Name, prefix) {
+			continue
+		}
+
+		etag := ""
+		if obj.Digest != "" {
+			etag = formatETag(obj.Digest)
+		}
+		contents = append(contents, s3.Object{
+			ETag:         aws.String(etag),
+			Key:          aws.String(obj.Name),
+			LastModified: aws.Time(obj.ModTime),
+			Size:         aws.Int64(int64(obj.Size)),
+			StorageClass: aws.String(""),
+		})
+	}
+	return contents
 }
 
 // parseCopySource extracts the source bucket and key from the x-amz-copy-source header.
