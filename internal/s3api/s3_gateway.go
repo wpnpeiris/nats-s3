@@ -86,7 +86,7 @@ func (s *S3Gateway) RegisterRoutes(router *mux.Router) {
 	r.Methods(http.MethodGet).Path("/{bucket}").HandlerFunc(s.iam.Auth(s.ListObjects))        // ListObjects/ListObjectsV2
 	r.Methods(http.MethodDelete).Path("/{bucket}").HandlerFunc(s.iam.Auth(s.DeleteBucket))    // DeleteBucket
 	r.Methods(http.MethodOptions).Path("/{bucket}").HandlerFunc(s.iam.Auth(s.notImplemented)) // CORS preflight
-	r.Methods(http.MethodPost).Path("/{bucket}").HandlerFunc(s.iam.Auth(s.notImplemented))    // POST object (HTML form upload)
+	//r.Methods(http.MethodPost).Path("/{bucket}").HandlerFunc(s.iam.Auth(s.notImplemented))    // POST object (HTML form upload)
 
 	// Bucket sub-resources (Queries matchers)
 	// Common GET/PUT/DELETE controls
@@ -142,7 +142,7 @@ func (s *S3Gateway) RegisterRoutes(router *mux.Router) {
 	addBucketSubresource(r, http.MethodGet, "intelligent-tiering", s.iam.Auth(s.notImplemented))
 	addBucketSubresource(r, http.MethodPut, "intelligent-tiering", s.iam.Auth(s.notImplemented))
 	addBucketSubresource(r, http.MethodDelete, "intelligent-tiering", s.iam.Auth(s.notImplemented))
-	addBucketSubresource(r, http.MethodPost, "delete", s.iam.Auth(s.notImplemented)) // Multi-object delete
+	addBucketSubresource(r, http.MethodPost, "delete", s.iam.Auth(s.DeleteObjects)) // Multi-object delete
 
 	// Object sub-resources
 	addObjectSubresource(r, http.MethodGet, "acl", s.iam.Auth(s.notImplemented))

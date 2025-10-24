@@ -46,6 +46,40 @@ type CopyObjectResult struct {
 	ChecksumSHA256 string    `xml:"ChecksumSHA256"`
 }
 
+// DeleteRequest represents the S3 DeleteObjects request structure.
+type DeleteRequest struct {
+	XMLName xml.Name         `xml:"Delete"`
+	Objects []ObjectToDelete `xml:"Object"`
+	Quiet   bool             `xml:"Quiet"`
+}
+
+// DeleteResult represents the S3 DeleteObjects response structure.
+type DeleteResult struct {
+	XMLName xml.Name        `xml:"http://s3.amazonaws.com/doc/2006-03-01/ DeleteResult"`
+	Deleted []DeletedObject `xml:"Deleted,omitempty"`
+	Error   []DeleteError   `xml:"Error,omitempty"`
+}
+
+// DeleteError represents an error during object deletion.
+type DeleteError struct {
+	Key       string `xml:"Key"`
+	Code      string `xml:"Code"`
+	Message   string `xml:"Message"`
+	VersionId string `xml:"VersionId,omitempty"`
+}
+
+// ObjectToDelete represents an object to be deleted.
+type ObjectToDelete struct {
+	Key       string `xml:"Key"`
+	VersionId string `xml:"VersionId,omitempty"`
+}
+
+// DeletedObject represents a successfully deleted object.
+type DeletedObject struct {
+	Key       string `xml:"Key"`
+	VersionId string `xml:"VersionId,omitempty"`
+}
+
 // CopyObject performs a server-side copy of an object from source to destination.
 func (s *S3Gateway) CopyObject(w http.ResponseWriter, r *http.Request) {
 	destBucket := mux.Vars(r)["bucket"]
@@ -120,9 +154,64 @@ func (s *S3Gateway) DeleteObject(w http.ResponseWriter, r *http.Request) {
 	model.WriteEmptyResponse(w, r, http.StatusNoContent)
 }
 
+// DeleteObjects handles batch deletion of multiple objects in a single request.
+func (s *S3Gateway) DeleteObjects(w http.ResponseWriter, r *http.Request) {
+	bucket := mux.Vars(r)["bucket"]
+
+	// Parse request body
+	var deleteReq DeleteRequest
+	if err := xml.NewDecoder(r.Body).Decode(&deleteReq); err != nil {
+		model.WriteErrorResponse(w, r, model.ErrMalformedXML)
+		return
+	}
+
+	// Process each object deletion
+	var deleted []DeletedObject
+	var deleteErrors []DeleteError
+
+	for _, obj := range deleteReq.Objects {
+		err := s.client.DeleteObject(bucket, obj.Key)
+		if err != nil {
+			// Record error
+			code := "InternalError"
+			message := err.Error()
+
+			if errors.Is(err, client.ErrBucketNotFound) {
+				code = "NoSuchBucket"
+				message = "The specified bucket does not exist"
+			} else if errors.Is(err, client.ErrObjectNotFound) {
+				// S3 considers deleting non-existent object as success
+				deleted = append(deleted, DeletedObject{Key: obj.Key})
+				continue
+			}
+
+			deleteErrors = append(deleteErrors, DeleteError{
+				Key:     obj.Key,
+				Code:    code,
+				Message: message,
+			})
+		} else {
+			// Successfully deleted
+			deleted = append(deleted, DeletedObject{Key: obj.Key})
+		}
+	}
+
+	// Build response
+	result := DeleteResult{
+		Deleted: deleted,
+		Error:   deleteErrors,
+	}
+
+	// If Quiet mode, only return errors
+	if deleteReq.Quiet {
+		result.Deleted = nil
+	}
+
+	model.WriteXMLResponse(w, r, http.StatusOK, result)
+}
+
 // Download writes object content to the response and sets typical S3 headers
 // such as Last-Modified, ETag, Content-Type, and Content-Length.
-// Supports HTTP Range requests for partial content retrieval.
 func (s *S3Gateway) Download(w http.ResponseWriter, r *http.Request) {
 	bucket := mux.Vars(r)["bucket"]
 	key := mux.Vars(r)["key"]
