@@ -10,6 +10,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -121,6 +122,7 @@ func (s *S3Gateway) DeleteObject(w http.ResponseWriter, r *http.Request) {
 
 // Download writes object content to the response and sets typical S3 headers
 // such as Last-Modified, ETag, Content-Type, and Content-Length.
+// Supports HTTP Range requests for partial content retrieval.
 func (s *S3Gateway) Download(w http.ResponseWriter, r *http.Request) {
 	bucket := mux.Vars(r)["bucket"]
 	key := mux.Vars(r)["key"]
@@ -139,11 +141,41 @@ func (s *S3Gateway) Download(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Set common headers
 	if info != nil {
 		updateLastModifiedHeader(info, w)
 		updateETagHeader(info, w)
-		updateContentLength(info, w)
 		updateContentTypeHeaders(info, w)
+	}
+
+	// Check for Range header
+	rangeHeader := r.Header.Get("Range")
+	if rangeHeader != "" {
+		// Parse and handle range request
+		start, end, err := parseRangeHeader(rangeHeader, len(data))
+		if err != nil {
+			// Invalid range - return 416 Range Not Satisfiable
+			w.Header().Set("Content-Range", fmt.Sprintf("bytes */%d", len(data)))
+			w.WriteHeader(http.StatusRequestedRangeNotSatisfiable)
+			return
+		}
+
+		// Return partial content
+		rangeData := data[start : end+1]
+		w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, end, len(data)))
+		w.Header().Set("Content-Length", fmt.Sprintf("%d", len(rangeData)))
+		w.WriteHeader(http.StatusPartialContent)
+
+		_, err = w.Write(rangeData)
+		if err != nil {
+			log.Printf("Error writing range response body for %s/%s: %s", bucket, key, err)
+		}
+		return
+	}
+
+	// No range header - return full content
+	if info != nil {
+		updateContentLength(info, w)
 	}
 
 	_, err = w.Write(data)
@@ -384,6 +416,65 @@ func groupObjectsByDelimiter(objects []*nats.ObjectInfo, prefix, delimiter strin
 	}
 
 	return contents, commonPrefixes
+}
+
+// parseRangeHeader parses an HTTP Range header and returns start and end byte positions.
+// Format: "bytes=start-end" or "bytes=start-" or "bytes=-suffix"
+// Returns inclusive start and end positions (both zero-indexed).
+func parseRangeHeader(rangeHeader string, contentLength int) (start, end int, err error) {
+	// Remove "bytes=" prefix
+	if !strings.HasPrefix(rangeHeader, "bytes=") {
+		return 0, 0, fmt.Errorf("invalid range header format")
+	}
+
+	rangeSpec := strings.TrimPrefix(rangeHeader, "bytes=")
+	parts := strings.Split(rangeSpec, "-")
+	if len(parts) != 2 {
+		return 0, 0, fmt.Errorf("invalid range specification")
+	}
+
+	// Handle different range formats
+	if parts[0] == "" {
+		// Suffix range: bytes=-500 (last 500 bytes)
+		suffix, err := strconv.Atoi(parts[1])
+		if err != nil || suffix <= 0 {
+			return 0, 0, fmt.Errorf("invalid suffix range")
+		}
+		start = contentLength - suffix
+		if start < 0 {
+			start = 0
+		}
+		end = contentLength - 1
+	} else if parts[1] == "" {
+		// Open-ended range: bytes=500- (from 500 to end)
+		start, err = strconv.Atoi(parts[0])
+		if err != nil || start < 0 {
+			return 0, 0, fmt.Errorf("invalid start position")
+		}
+		if start >= contentLength {
+			return 0, 0, fmt.Errorf("start position beyond content length")
+		}
+		end = contentLength - 1
+	} else {
+		// Normal range: bytes=0-499
+		start, err = strconv.Atoi(parts[0])
+		if err != nil || start < 0 {
+			return 0, 0, fmt.Errorf("invalid start position")
+		}
+		end, err = strconv.Atoi(parts[1])
+		if err != nil || end < start {
+			return 0, 0, fmt.Errorf("invalid end position")
+		}
+		// Clamp end to content length
+		if end >= contentLength {
+			end = contentLength - 1
+		}
+		if start >= contentLength {
+			return 0, 0, fmt.Errorf("start position beyond content length")
+		}
+	}
+
+	return start, end, nil
 }
 
 // objectsToContents converts NATS ObjectInfo objects to S3 Object format.
