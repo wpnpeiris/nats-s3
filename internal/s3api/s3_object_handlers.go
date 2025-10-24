@@ -38,56 +38,78 @@ type CopyObjectResult struct {
 	ChecksumSHA256 string    `xml:"ChecksumSHA256"`
 }
 
-// ListObjects returns objects in a bucket as a simple S3-compatible XML list.
-func (s *S3Gateway) ListObjects(w http.ResponseWriter, r *http.Request) {
-	bucket := mux.Vars(r)["bucket"]
+// CopyObject performs a server-side copy of an object from source to destination.
+func (s *S3Gateway) CopyObject(w http.ResponseWriter, r *http.Request) {
+	destBucket := mux.Vars(r)["bucket"]
+	destKey := mux.Vars(r)["key"]
 
-	log.Println("List Objects in bucket", bucket)
+	copySourceHeader := r.Header.Get("x-amz-copy-source")
+	sourceBucket, sourceKey, err := parseCopySource(copySourceHeader)
+	if err != nil {
+		model.WriteErrorResponse(w, r, model.ErrInvalidCopySource)
+		return
+	}
 
-	res, err := s.client.ListObjects(bucket)
+	log.Printf("CopyObject from %s/%s to %s/%s", sourceBucket, sourceKey, destBucket, destKey)
+
+	// Get source object
+	sourceObj, sourceData, err := s.client.GetObject(sourceBucket, sourceKey)
 	if err != nil {
 		if errors.Is(err, client.ErrBucketNotFound) {
 			model.WriteErrorResponse(w, r, model.ErrNoSuchBucket)
 			return
 		}
 		if errors.Is(err, client.ErrObjectNotFound) {
-			model.WriteEmptyResponse(w, r, http.StatusOK)
+			model.WriteErrorResponse(w, r, model.ErrNoSuchKey)
 			return
 		}
-
 		model.WriteErrorResponse(w, r, model.ErrInternalError)
 		return
 	}
 
-	var contents []s3.Object
-	for _, obj := range res {
-		etag := ""
-		if obj.Digest != "" {
-			etag = fmt.Sprintf("\"%s\"", obj.Digest)
-		}
-		contents = append(contents, s3.Object{
-			ETag:         aws.String(etag),
-			Key:          aws.String(obj.Name),
-			LastModified: aws.Time(obj.ModTime),
-			Size:         aws.Int64(int64(obj.Size)),
-			StorageClass: aws.String(""),
-		})
-	}
+	// Determine metadata handling based on x-amz-metadata-directive
+	contentType, metadata := determineMetadataForCopy(r, sourceObj)
 
-	xmlResponse := ListBucketResult{
-		IsTruncated: false,
-		Contents:    contents,
-		Name:        bucket,
-		Prefix:      "",
-		MaxKeys:     1000,
-	}
-
-	err = xml.NewEncoder(w).Encode(xmlResponse)
+	// Put object at destination
+	destInfo, err := s.client.PutObject(destBucket, destKey, contentType, metadata, sourceData)
 	if err != nil {
-		log.Printf("Error enconding the response, %s", err)
+		if errors.Is(err, client.ErrBucketNotFound) {
+			model.WriteErrorResponse(w, r, model.ErrNoSuchBucket)
+			return
+		}
 		model.WriteErrorResponse(w, r, model.ErrInternalError)
 		return
 	}
+
+	// Return CopyObjectResult XML response
+	result := CopyObjectResult{
+		ETag:         formatETag(destInfo.Digest),
+		LastModified: destInfo.ModTime,
+	}
+
+	model.WriteXMLResponse(w, r, http.StatusOK, result)
+}
+
+// DeleteObject deletes the specified object and responds with 204 No Content.
+func (s *S3Gateway) DeleteObject(w http.ResponseWriter, r *http.Request) {
+	bucket := mux.Vars(r)["bucket"]
+	key := mux.Vars(r)["key"]
+
+	err := s.client.DeleteObject(bucket, key)
+	if err != nil {
+		if errors.Is(err, client.ErrBucketNotFound) {
+			model.WriteErrorResponse(w, r, model.ErrNoSuchBucket)
+			return
+		}
+		if errors.Is(err, client.ErrObjectNotFound) {
+			model.WriteErrorResponse(w, r, model.ErrNoSuchKey)
+			return
+		}
+		model.WriteErrorResponse(w, r, model.ErrInternalError)
+		return
+	}
+
+	model.WriteEmptyResponse(w, r, http.StatusNoContent)
 }
 
 // Download writes object content to the response and sets typical S3 headers
@@ -152,44 +174,57 @@ func (s *S3Gateway) HeadObject(w http.ResponseWriter, r *http.Request) {
 		updateContentTypeHeaders(res, w)
 		updateMetadataHeaders(res, w)
 	}
-
 }
 
-// updateMetadataHeaders writes metadata headers in response
-func updateMetadataHeaders(obj *nats.ObjectInfo, w http.ResponseWriter) {
-	if obj.Metadata != nil {
-		for k, v := range obj.Metadata {
-			if k == "" {
-				continue
-			}
-			w.Header().Set(k, v)
+// ListObjects returns objects in a bucket as a simple S3-compatible XML list.
+func (s *S3Gateway) ListObjects(w http.ResponseWriter, r *http.Request) {
+	bucket := mux.Vars(r)["bucket"]
+
+	log.Println("List Objects in bucket", bucket)
+
+	res, err := s.client.ListObjects(bucket)
+	if err != nil {
+		if errors.Is(err, client.ErrBucketNotFound) {
+			model.WriteErrorResponse(w, r, model.ErrNoSuchBucket)
+			return
 		}
-	}
-}
-
-// updateLastModifiedHeader writes 'Last-Modified' header in response
-func updateLastModifiedHeader(obj *nats.ObjectInfo, w http.ResponseWriter) {
-	w.Header().Set("Last-Modified", obj.ModTime.UTC().Format(time.RFC1123))
-}
-
-// updateETagHeader writes 'ETag' header in response
-func updateETagHeader(obj *nats.ObjectInfo, w http.ResponseWriter) {
-	if obj.Digest != "" {
-		w.Header().Set("ETag", fmt.Sprintf("\"%s\"", obj.Digest))
-	}
-}
-
-// updateContentLength writes 'Content-Length' header in response
-func updateContentLength(obj *nats.ObjectInfo, w http.ResponseWriter) {
-	w.Header().Set("Content-Length", fmt.Sprintf("%d", obj.Size))
-}
-
-// updateContentTypeHeaders writes 'Content-Type' header in response
-func updateContentTypeHeaders(obj *nats.ObjectInfo, w http.ResponseWriter) {
-	if obj != nil && obj.Headers != nil {
-		if cts, ok := obj.Headers["Content-Type"]; ok && len(cts) > 0 && cts[0] != "" {
-			w.Header().Set("Content-Type", cts[0])
+		if errors.Is(err, client.ErrObjectNotFound) {
+			model.WriteEmptyResponse(w, r, http.StatusOK)
+			return
 		}
+
+		model.WriteErrorResponse(w, r, model.ErrInternalError)
+		return
+	}
+
+	var contents []s3.Object
+	for _, obj := range res {
+		etag := ""
+		if obj.Digest != "" {
+			etag = formatETag(obj.Digest)
+		}
+		contents = append(contents, s3.Object{
+			ETag:         aws.String(etag),
+			Key:          aws.String(obj.Name),
+			LastModified: aws.Time(obj.ModTime),
+			Size:         aws.Int64(int64(obj.Size)),
+			StorageClass: aws.String(""),
+		})
+	}
+
+	xmlResponse := ListBucketResult{
+		IsTruncated: false,
+		Contents:    contents,
+		Name:        bucket,
+		Prefix:      "",
+		MaxKeys:     1000,
+	}
+
+	err = xml.NewEncoder(w).Encode(xmlResponse)
+	if err != nil {
+		log.Printf("Error enconding the response, %s", err)
+		model.WriteErrorResponse(w, r, model.ErrInternalError)
+		return
 	}
 }
 
@@ -239,9 +274,36 @@ func (s *S3Gateway) Upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if res.Digest != "" {
-		w.Header().Set("ETag", fmt.Sprintf("\"%s\"", res.Digest))
+		w.Header().Set("ETag", formatETag(res.Digest))
 	}
 	model.WriteEmptyResponse(w, r, http.StatusOK)
+}
+
+// determineMetadataForCopy determines which metadata to use for the destination object
+// based on the x-amz-metadata-directive header (COPY or REPLACE).
+// Returns the content type and metadata map to use for the destination.
+func determineMetadataForCopy(r *http.Request, sourceObj *nats.ObjectInfo) (contentType string, metadata map[string]string) {
+	metadataDirective := r.Header.Get("x-amz-metadata-directive")
+	if metadataDirective == "" {
+		metadataDirective = "COPY" // Default to COPY
+	}
+
+	if metadataDirective == "REPLACE" {
+		// Use metadata from the request
+		contentType = extractContentType(r)
+		metadata = extractMetadata(r)
+	} else {
+		// Copy metadata from source object
+		contentType = ""
+		if sourceObj.Headers != nil {
+			if cts, ok := sourceObj.Headers["Content-Type"]; ok && len(cts) > 0 {
+				contentType = cts[0]
+			}
+		}
+		metadata = sourceObj.Metadata
+	}
+
+	return contentType, metadata
 }
 
 // extractContentType returns request Header value of "Content-Type"
@@ -258,28 +320,66 @@ func extractMetadata(r *http.Request) map[string]string {
 			meta[ln] = strings.Join(vals, ",")
 		}
 	}
-
 	return meta
 }
 
-// DeleteObject deletes the specified object and responds with 204 No Content.
-func (s *S3Gateway) DeleteObject(w http.ResponseWriter, r *http.Request) {
-	bucket := mux.Vars(r)["bucket"]
-	key := mux.Vars(r)["key"]
+// formatETag wraps a digest string in quotes to create an S3-compatible ETag value.
+func formatETag(digest string) string {
+	return fmt.Sprintf("\"%s\"", digest)
+}
 
-	err := s.client.DeleteObject(bucket, key)
-	if err != nil {
-		if errors.Is(err, client.ErrBucketNotFound) {
-			model.WriteErrorResponse(w, r, model.ErrNoSuchBucket)
-			return
-		}
-		if errors.Is(err, client.ErrObjectNotFound) {
-			model.WriteErrorResponse(w, r, model.ErrNoSuchKey)
-			return
-		}
-		model.WriteErrorResponse(w, r, model.ErrInternalError)
-		return
+// parseCopySource extracts the source bucket and key from the x-amz-copy-source header.
+// The header format can be "/sourcebucket/sourcekey" or "sourcebucket/sourcekey".
+// Returns the source bucket, source key, and an error if the format is invalid.
+func parseCopySource(copySourceHeader string) (bucket, key string, err error) {
+	if copySourceHeader == "" {
+		return "", "", errors.New("x-amz-copy-source header is empty")
 	}
 
-	model.WriteEmptyResponse(w, r, http.StatusNoContent)
+	// Remove leading slash if present
+	copySource := strings.TrimPrefix(copySourceHeader, "/")
+	parts := strings.SplitN(copySource, "/", 2)
+	if len(parts) != 2 {
+		return "", "", errors.New("invalid x-amz-copy-source format: expected bucket/key")
+	}
+
+	return parts[0], parts[1], nil
+}
+
+// updateContentLength writes 'Content-Length' header in response
+func updateContentLength(obj *nats.ObjectInfo, w http.ResponseWriter) {
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", obj.Size))
+}
+
+// updateContentTypeHeaders writes 'Content-Type' header in response
+func updateContentTypeHeaders(obj *nats.ObjectInfo, w http.ResponseWriter) {
+	if obj != nil && obj.Headers != nil {
+		if cts, ok := obj.Headers["Content-Type"]; ok && len(cts) > 0 && cts[0] != "" {
+			w.Header().Set("Content-Type", cts[0])
+		}
+	}
+}
+
+// updateETagHeader writes 'ETag' header in response
+func updateETagHeader(obj *nats.ObjectInfo, w http.ResponseWriter) {
+	if obj.Digest != "" {
+		w.Header().Set("ETag", formatETag(obj.Digest))
+	}
+}
+
+// updateLastModifiedHeader writes 'Last-Modified' header in response
+func updateLastModifiedHeader(obj *nats.ObjectInfo, w http.ResponseWriter) {
+	w.Header().Set("Last-Modified", obj.ModTime.UTC().Format(time.RFC1123))
+}
+
+// updateMetadataHeaders writes metadata headers in response
+func updateMetadataHeaders(obj *nats.ObjectInfo, w http.ResponseWriter) {
+	if obj.Metadata != nil {
+		for k, v := range obj.Metadata {
+			if k == "" {
+				continue
+			}
+			w.Header().Set(k, v)
+		}
+	}
 }
