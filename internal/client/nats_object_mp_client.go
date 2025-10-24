@@ -38,6 +38,7 @@ type UploadMeta struct {
 	Owner     string           `json:"owner,omitempty"` // optional, auth principal
 	MinPartSz int64            `json:"min_part_size"`   // default 5MiB
 	MaxParts  int              `json:"max_parts"`       // default 10000
+	Completed bool             `json:"completed"`       // Marks if upload was completed (race protection)
 	Parts     map[int]PartMeta `json:"-"`               // Not persisted, populated on-demand
 }
 
@@ -62,8 +63,11 @@ func NewMultiPartStore(logger log.Logger, c *Client) (*MultiPartStore, error) {
 	metaKV, err := js.KeyValue(MetaStoreName)
 	if err != nil {
 		if errors.Is(err, nats.ErrBucketNotFound) {
+			// Set 7-day TTL to automatically clean up abandoned uploads
+			ttl := 7 * 24 * time.Hour
 			metaKV, err = js.CreateKeyValue(&nats.KeyValueConfig{
 				Bucket: MetaStoreName,
+				TTL:    ttl,
 			})
 			if err != nil {
 				return nil, fmt.Errorf("failed to create multipart meta store when calling js.CreateKeyValue(): %w", err)
@@ -131,6 +135,25 @@ func (m *MultiPartStore) InitMultipartUpload(bucket string, key string, uploadID
 func (m *MultiPartStore) UploadPart(bucket string, key string, uploadID string, part int, dataReader io.ReadCloser) (string, error) {
 	logging.Info(m.logger, "msg", fmt.Sprintf("Upload part:%06d [%s/%s], UploadID: %s", part, bucket, key, uploadID))
 
+	// Validate upload session exists before accepting the part
+	mk := metaKey(bucket, key, uploadID)
+	entry, err := m.getUploadMeta(mk)
+	if err != nil {
+		if errors.Is(err, nats.ErrKeyNotFound) {
+			return "", ErrUploadNotFound
+		}
+		return "", err
+	}
+
+	// Check if upload was already completed
+	var meta UploadMeta
+	if err := json.Unmarshal(entry.Value(), &meta); err != nil {
+		return "", err
+	}
+	if meta.Completed {
+		return "", ErrUploadCompleted
+	}
+
 	h := md5.New()
 	pr, pw := io.Pipe()
 	go func() {
@@ -167,14 +190,14 @@ func (m *MultiPartStore) UploadPart(bucket string, key string, uploadID string, 
 func (m *MultiPartStore) AbortMultipartUpload(bucket string, key string, uploadID string) error {
 	logging.Info(m.logger, "msg", fmt.Sprintf("Abort multipart upload: [%s/%s], UploadID: %s", bucket, key, uploadID))
 	mk := metaKey(bucket, key, uploadID)
-	md, err := m.getUploadMeta(mk)
-	if err != nil {
-		return ErrUploadNotFound
-	}
 
-	var meta UploadMeta
-	if err := json.Unmarshal(md.Value(), &meta); err != nil {
-		logging.Error(m.logger, "msg", "Error at AbortMultipartUpload", "err", err)
+	// Just verify the upload session exists (no need to unmarshal full metadata)
+	_, err := m.metaStore.Get(mk)
+	if err != nil {
+		if errors.Is(err, nats.ErrKeyNotFound) {
+			return ErrUploadNotFound
+		}
+		logging.Error(m.logger, "msg", "Error at AbortMultipartUpload when checking session", "err", err)
 		return err
 	}
 
@@ -202,7 +225,7 @@ func (m *MultiPartStore) AbortMultipartUpload(bucket string, key string, uploadI
 	}
 
 	// Delete session metadata
-	err = m.removeUploadMeta(meta)
+	err = m.removeUploadMeta(bucket, key, uploadID)
 	if err != nil {
 		logging.Warn(m.logger, "msg", "Failed to delete multipart session data at AbortMultipartUpload", "err", err)
 		return err
@@ -255,6 +278,12 @@ func (m *MultiPartStore) CompleteMultipartUpload(bucket string, key string, uplo
 		return "", err
 	}
 
+	// Check if upload was already completed (race protection)
+	if meta.Completed {
+		logging.Info(m.logger, "msg", "Upload already completed", "uploadID", uploadID)
+		return "", ErrUploadCompleted
+	}
+
 	// Populate parts from individual KV entries
 	parts, err := m.getAllPartMeta(bucket, key, uploadID)
 	if err != nil {
@@ -262,6 +291,23 @@ func (m *MultiPartStore) CompleteMultipartUpload(bucket string, key string, uplo
 		return "", err
 	}
 	meta.Parts = parts
+
+	// Validate part sizes (S3 requires all parts except the last to meet MinPartSz)
+	for i, partNum := range sortedPartNumbers {
+		part, ok := meta.Parts[partNum]
+		if !ok {
+			return "", ErrMissingPart
+		}
+		isLastPart := (i == len(sortedPartNumbers)-1)
+
+		// All parts except the last must meet minimum size requirement
+		if !isLastPart && int64(part.Size) < meta.MinPartSz {
+			err := fmt.Errorf("part %d size %d bytes is below minimum %d bytes",
+				partNum, part.Size, meta.MinPartSz)
+			logging.Error(m.logger, "msg", "Part size validation failed", "err", err)
+			return "", err
+		}
+	}
 
 	md5Concat := md5.New()
 	pr, pw := io.Pipe()
@@ -324,6 +370,20 @@ func (m *MultiPartStore) CompleteMultipartUpload(bucket string, key string, uplo
 	etagHex := hex.EncodeToString(md5Concat.Sum(nil))
 	finalETag := fmt.Sprintf(`"%s-%d"`, strings.ToLower(etagHex), len(sortedPartNumbers))
 
+	// Mark upload as completed with optimistic locking to prevent duplicate completion
+	meta.Completed = true
+	completedData, err := json.Marshal(meta)
+	if err != nil {
+		logging.Error(m.logger, "msg", "Error marshaling completed metadata", "err", err)
+		return "", err
+	}
+	_, err = m.metaStore.Update(mk, completedData, md.Revision())
+	if err != nil {
+		// If update fails due to revision mismatch, another completion happened
+		logging.Warn(m.logger, "msg", "Failed to mark upload as completed (possible concurrent completion)", "err", err)
+		return "", ErrUploadCompleted
+	}
+
 	// Delete temporary part data from Object Store
 	err = m.removeAllPartData(bucket, key, uploadID, meta.Parts)
 	if err != nil {
@@ -337,7 +397,7 @@ func (m *MultiPartStore) CompleteMultipartUpload(bucket string, key string, uplo
 	}
 
 	// Delete metadata
-	err = m.removeUploadMeta(meta)
+	err = m.removeUploadMeta(bucket, key, uploadID)
 	if err != nil {
 		logging.Warn(m.logger, "Failed to delete multipart meta data", "err", err)
 		return "", err
@@ -349,6 +409,7 @@ func (m *MultiPartStore) CompleteMultipartUpload(bucket string, key string, uplo
 // saveUploadMeta persists the given meta value at the provided key in the
 // UploadMeta Key-Value store. The value is expected to be a JSON-encoded
 // UploadMeta blob. Returns any error encountered during the put operation.
+// The KV bucket has a 7-day TTL configured to automatically clean up abandoned uploads.
 func (m *MultiPartStore) saveUploadMeta(meta UploadMeta) error {
 	logging.Debug(m.logger, "msg", fmt.Sprintf("creating upload meta: %v", meta))
 	data, err := json.Marshal(meta)
@@ -359,19 +420,19 @@ func (m *MultiPartStore) saveUploadMeta(meta UploadMeta) error {
 	key := metaKey(meta.Bucket, meta.Key, meta.UploadID)
 	_, err = m.metaStore.Put(key, data)
 	if err != nil {
-		logging.Error(m.logger, "msg", "Error at saveUploadMeta when sessionStore.Put()", "err", err)
+		logging.Error(m.logger, "msg", "Error at saveUploadMeta when metaStore.Put()", "err", err)
 		return err
 	}
 	return nil
 }
 
 // removeUploadMeta delete the persisted multipart upload metadata.
-func (m *MultiPartStore) removeUploadMeta(meta UploadMeta) error {
-	logging.Debug(m.logger, "msg", fmt.Sprintf("remove upload meta: %v", meta))
-	key := metaKey(meta.Bucket, meta.Key, meta.UploadID)
-	err := m.metaStore.Delete(key)
+func (m *MultiPartStore) removeUploadMeta(bucket, key, uploadID string) error {
+	logging.Debug(m.logger, "msg", fmt.Sprintf("remove upload meta: [%s/%s] uploadID: %s", bucket, key, uploadID))
+	mk := metaKey(bucket, key, uploadID)
+	err := m.metaStore.Delete(mk)
 	if err != nil {
-		logging.Error(m.logger, "msg", "Error at removeUploadMeta when sessionStore.Delete()", "err", err)
+		logging.Error(m.logger, "msg", "Error at removeUploadMeta when metaStore.Delete()", "err", err)
 		return err
 	}
 
