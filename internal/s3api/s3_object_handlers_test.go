@@ -332,3 +332,94 @@ func TestCopyObject_InvalidSource(t *testing.T) {
 		t.Fatalf("COPY non-existent source expected 404, got: %d", copyRec2.Code)
 	}
 }
+
+func TestListObjects_WithDelimiter(t *testing.T) {
+	s := testutil.StartJSServer(t)
+	defer s.Shutdown()
+
+	logger := logging.NewLogger(logging.Config{Level: "debug"})
+	gw, err := NewS3Gateway(logger, s.ClientURL(), "", "", nil)
+	if err != nil {
+		t.Fatalf("failed to create S3 gateway: %v", err)
+	}
+
+	// Setup NATS connection and create bucket
+	natsEndpoint := s.Addr().String()
+	nc, err := nats.Connect(natsEndpoint)
+	nc.SetClosedHandler(func(_ *nats.Conn) {})
+	defer nc.Close()
+
+	js, err := nc.JetStream()
+	if err != nil {
+		t.Fatalf("JetStream failed: %v", err)
+	}
+	bucket := "test-delimiter"
+	if _, err := js.CreateObjectStore(&nats.ObjectStoreConfig{Bucket: bucket}); err != nil {
+		t.Fatalf("create object store failed: %v", err)
+	}
+
+	r := mux.NewRouter()
+	gw.RegisterRoutes(r)
+
+	// Upload test objects
+	testData := map[string]string{
+		"dir1/file1": "data1",
+		"dir1/file2": "data2",
+		"dir2/file1": "data3",
+	}
+
+	for key, data := range testData {
+		req := httptest.NewRequest("PUT", "/"+bucket+"/"+key, strings.NewReader(data))
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+		if rec.Code != 200 {
+			t.Fatalf("PUT %s unexpected status: %d", key, rec.Code)
+		}
+	}
+
+	// List with delimiter
+	listReq := httptest.NewRequest("GET", "/"+bucket+"?delimiter=/", nil)
+	listRec := httptest.NewRecorder()
+	r.ServeHTTP(listRec, listReq)
+
+	if listRec.Code != 200 {
+		t.Fatalf("LIST with delimiter unexpected status: %d body=%s", listRec.Code, listRec.Body.String())
+	}
+
+	// Parse XML response
+	var result ListBucketResult
+	body, _ := io.ReadAll(listRec.Body)
+	t.Logf("XML Response: %s", string(body))
+
+	if err := xml.Unmarshal(body, &result); err != nil {
+		t.Fatalf("unmarshal list xml failed: %v\nxml=%s", err, string(body))
+	}
+
+	// Verify Contents is empty (all objects should be grouped)
+	if len(result.Contents) != 0 {
+		t.Errorf("Expected 0 Contents entries, got %d", len(result.Contents))
+	}
+
+	// Verify CommonPrefixes
+	if len(result.CommonPrefixes) != 2 {
+		t.Fatalf("Expected 2 CommonPrefixes, got %d: %+v", len(result.CommonPrefixes), result.CommonPrefixes)
+	}
+
+	// Check for dir1/ and dir2/
+	prefixes := make(map[string]bool)
+	for _, cp := range result.CommonPrefixes {
+		prefixes[cp.Prefix] = true
+	}
+
+	if !prefixes["dir1/"] {
+		t.Errorf("Expected CommonPrefix 'dir1/', got: %+v", result.CommonPrefixes)
+	}
+	if !prefixes["dir2/"] {
+		t.Errorf("Expected CommonPrefix 'dir2/', got: %+v", result.CommonPrefixes)
+	}
+
+	// Verify Delimiter is set
+	if result.Delimiter != "/" {
+		t.Errorf("Expected Delimiter '/', got '%s'", result.Delimiter)
+	}
+}
