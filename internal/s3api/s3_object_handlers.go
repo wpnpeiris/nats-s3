@@ -283,3 +283,89 @@ func (s *S3Gateway) DeleteObject(w http.ResponseWriter, r *http.Request) {
 
 	model.WriteEmptyResponse(w, r, http.StatusNoContent)
 }
+
+// CopyObject performs a server-side copy of an object from source to destination.
+// The source is specified via the x-amz-copy-source header in the format "sourcebucket/sourcekey".
+// Metadata handling is controlled by x-amz-metadata-directive header (COPY or REPLACE).
+func (s *S3Gateway) CopyObject(w http.ResponseWriter, r *http.Request) {
+	destBucket := mux.Vars(r)["bucket"]
+	destKey := mux.Vars(r)["key"]
+
+	// Parse x-amz-copy-source header (format: /sourcebucket/sourcekey or sourcebucket/sourcekey)
+	copySource := r.Header.Get("x-amz-copy-source")
+	if copySource == "" {
+		model.WriteErrorResponse(w, r, model.ErrInvalidCopySource)
+		return
+	}
+
+	// Remove leading slash if present and URL decode
+	copySource = strings.TrimPrefix(copySource, "/")
+	parts := strings.SplitN(copySource, "/", 2)
+	if len(parts) != 2 {
+		model.WriteErrorResponse(w, r, model.ErrInvalidCopySource)
+		return
+	}
+
+	sourceBucket := parts[0]
+	sourceKey := parts[1]
+
+	log.Printf("CopyObject from %s/%s to %s/%s", sourceBucket, sourceKey, destBucket, destKey)
+
+	// Get source object
+	sourceInfo, sourceData, err := s.client.GetObject(sourceBucket, sourceKey)
+	if err != nil {
+		if errors.Is(err, client.ErrBucketNotFound) {
+			model.WriteErrorResponse(w, r, model.ErrNoSuchBucket)
+			return
+		}
+		if errors.Is(err, client.ErrObjectNotFound) {
+			model.WriteErrorResponse(w, r, model.ErrNoSuchKey)
+			return
+		}
+		model.WriteErrorResponse(w, r, model.ErrInternalError)
+		return
+	}
+
+	// Determine metadata handling
+	metadataDirective := r.Header.Get("x-amz-metadata-directive")
+	if metadataDirective == "" {
+		metadataDirective = "COPY" // Default to COPY
+	}
+
+	var contentType string
+	var metadata map[string]string
+
+	if metadataDirective == "REPLACE" {
+		// Use metadata from the request
+		contentType = extractContentType(r)
+		metadata = extractMetadata(r)
+	} else {
+		// Copy metadata from source object
+		contentType = ""
+		if sourceInfo.Headers != nil {
+			if cts, ok := sourceInfo.Headers["Content-Type"]; ok && len(cts) > 0 {
+				contentType = cts[0]
+			}
+		}
+		metadata = sourceInfo.Metadata
+	}
+
+	// Put object at destination
+	destInfo, err := s.client.PutObject(destBucket, destKey, contentType, metadata, sourceData)
+	if err != nil {
+		if errors.Is(err, client.ErrBucketNotFound) {
+			model.WriteErrorResponse(w, r, model.ErrNoSuchBucket)
+			return
+		}
+		model.WriteErrorResponse(w, r, model.ErrInternalError)
+		return
+	}
+
+	// Return CopyObjectResult XML response
+	result := CopyObjectResult{
+		ETag:         fmt.Sprintf("\"%s\"", destInfo.Digest),
+		LastModified: destInfo.ModTime,
+	}
+
+	model.WriteXMLResponse(w, r, http.StatusOK, result)
+}

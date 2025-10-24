@@ -167,11 +167,13 @@ func (s *S3Gateway) RegisterRoutes(router *mux.Router) {
 	r.Methods(http.MethodDelete).Path("/{bucket}/{key:.*}").Queries("uploadId", "{uploadId}").HandlerFunc(s.iam.Auth(s.AbortMultipartUpload))  // AbortMultipartUpload
 
 	// Object root
-	r.Methods(http.MethodPut).Path("/{bucket}/{key:.*}").HandlerFunc(s.iam.Auth(s.Upload))             // PutObject / CopyObject
-	r.Methods(http.MethodGet).Path("/{bucket}/{key:.*}").HandlerFunc(s.iam.Auth(s.Download))           // GetObject / SelectObjectContent
-	r.Methods(http.MethodHead).Path("/{bucket}/{key:.*}").HandlerFunc(s.iam.Auth(s.HeadObject))        // HeadObject
-	r.Methods(http.MethodDelete).Path("/{bucket}/{key:.*}").HandlerFunc(s.iam.Auth(s.DeleteObject))    // DeleteObject
-	r.Methods(http.MethodOptions).Path("/{bucket}/{key:.*}").HandlerFunc(s.iam.Auth(s.notImplemented)) // CORS preflight
+	// CopyObject - PUT with x-amz-copy-source header (must be before regular Upload)
+	r.Methods(http.MethodPut).Path("/{bucket}/{key:.*}").HeadersRegexp("x-amz-copy-source", ".+").HandlerFunc(s.iam.Auth(s.CopyObject)) // CopyObject
+	r.Methods(http.MethodPut).Path("/{bucket}/{key:.*}").HandlerFunc(s.iam.Auth(s.Upload))                                              // PutObject
+	r.Methods(http.MethodGet).Path("/{bucket}/{key:.*}").HandlerFunc(s.iam.Auth(s.Download))                                            // GetObject / SelectObjectContent
+	r.Methods(http.MethodHead).Path("/{bucket}/{key:.*}").HandlerFunc(s.iam.Auth(s.HeadObject))                                         // HeadObject
+	r.Methods(http.MethodDelete).Path("/{bucket}/{key:.*}").HandlerFunc(s.iam.Auth(s.DeleteObject))                                     // DeleteObject
+	r.Methods(http.MethodOptions).Path("/{bucket}/{key:.*}").HandlerFunc(s.iam.Auth(s.notImplemented))                                  // CORS preflight
 }
 
 func (s *S3Gateway) notImplemented(w http.ResponseWriter, _ *http.Request) {
