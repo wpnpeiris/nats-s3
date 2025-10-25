@@ -48,9 +48,30 @@ func (s *S3Gateway) CreateBucket(w http.ResponseWriter, r *http.Request) {
 
 // DeleteBucket deletes the specified bucket and responds with 204 No Content.
 // Returns NoSuchBucket if the bucket does not exist.
+// Returns BucketNotEmpty if the bucket contains objects.
 func (s *S3Gateway) DeleteBucket(w http.ResponseWriter, r *http.Request) {
 	bucket := mux.Vars(r)["bucket"]
-	err := s.client.DeleteBucket(bucket)
+
+	// Check if bucket is empty before attempting deletion
+	objects, err := s.client.ListObjects(bucket)
+	if err != nil {
+		if errors.Is(err, client.ErrBucketNotFound) {
+			model.WriteErrorResponse(w, r, model.ErrNoSuchBucket)
+			return
+		}
+		// If no objects found, that's actually fine - bucket is empty
+		if !errors.Is(err, client.ErrObjectNotFound) {
+			model.WriteErrorResponse(w, r, model.ErrInternalError)
+			return
+		}
+	} else if len(objects) > 0 {
+		// Bucket has objects, cannot delete
+		model.WriteErrorResponse(w, r, model.ErrBucketNotEmpty)
+		return
+	}
+
+	// Bucket is empty, proceed with deletion
+	err = s.client.DeleteBucket(bucket)
 	if err != nil {
 		if errors.Is(err, client.ErrBucketNotFound) {
 			model.WriteErrorResponse(w, r, model.ErrNoSuchBucket)

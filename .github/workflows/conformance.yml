@@ -12,7 +12,7 @@ on:
 
 jobs:
   s3-compat:
-    name: AWS-CLI subset
+    name: S3 API Conformance
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -76,13 +76,21 @@ jobs:
             (echo > /dev/tcp/127.0.0.1/5222) >/dev/null 2>&1 && { echo ready; break; }; sleep 1; done
         shell: bash
 
-      - name: Run curated conformance subset
+      - name: Run basic conformance tests
         env:
           AWS_ACCESS_KEY_ID: ci-access
           AWS_SECRET_ACCESS_KEY: ci-secret
           AWS_DEFAULT_REGION: us-east-1
         run: |
           bash scripts/ci-conformance.sh
+
+      - name: Run full conformance tests
+        env:
+          AWS_ACCESS_KEY_ID: ci-access
+          AWS_SECRET_ACCESS_KEY: ci-secret
+          AWS_DEFAULT_REGION: us-east-1
+        run: |
+          bash scripts/ci-conformance-full.sh
 
       - name: Show gateway logs on failure
         if: failure()
