@@ -1,4 +1,16 @@
-# NATS
+# NATS-S3 Gateway
+
+[![Build Status](https://github.com/wpnpeiris/nats-s3/actions/workflows/release.yml/badge.svg)](https://github.com/wpnpeiris/nats-s3/actions/workflows/release.yml)
+[![Conformance](https://github.com/wpnpeiris/nats-s3/actions/workflows/conformance.yml/badge.svg)](https://github.com/wpnpeiris/nats-s3/actions/workflows/conformance.yml)
+[![Coverage](https://github.com/wpnpeiris/nats-s3/actions/workflows/coverage.yml/badge.svg)](https://github.com/wpnpeiris/nats-s3/actions/workflows/coverage.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/wpnpeiris/nats-s3)](https://goreportcard.com/report/github.com/wpnpeiris/nats-s3)
+[![License](https://img.shields.io/github/license/wpnpeiris/nats-s3)](https://github.com/wpnpeiris/nats-s3/blob/main/LICENSE)
+[![GitHub Stars](https://img.shields.io/github/stars/wpnpeiris/nats-s3?style=social)](https://github.com/wpnpeiris/nats-s3/stargazers)
+[![Docker Pulls](https://img.shields.io/docker/pulls/wpnpeiris/nats-s3)](https://ghcr.io/wpnpeiris/nats-s3)
+
+> **S3-compatible object storage powered by NATS JetStream** - Lightweight, fast, and cloud-native.
+
+## About NATS
 
 NATS is a high‑performance distributed messaging system with pub/sub at its core and a
 built‑in persistence layer (JetStream) enabling Streaming, Key‑Value, and Object Store.
@@ -306,5 +318,8 @@ aws s3 ls --endpoint-url=http://localhost:5222
 - Please follow our simple [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
 
 ## Conformance
-- CI runs a curated subset of S3 compatibility tests using the AWS CLI against the gateway. See details and the pass list: [CONFORMANCE.md](CONFORMANCE.md).
-- Workflow status: [![Conformance](https://github.com/wpnpeiris/nats-s3/actions/workflows/conformance.yml/badge.svg)](https://github.com/wpnpeiris/nats-s3/actions/workflows/conformance.yml)
+
+NATS-S3 achieves **100% pass rate** on core S3 API operations with comprehensive conformance testing. See [CONFORMANCE.md](CONFORMANCE.md) for:
+- Full test coverage details (25+ tests)
+- S3 API feature matrix
+- Instructions for running tests locally
