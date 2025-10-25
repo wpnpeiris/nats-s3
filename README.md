@@ -201,7 +201,7 @@ docker run --network host -p 4222:4222 \
 # Note: Mount credentials.json file into the container
 docker run --network host -p 5222:5222 \
   -v $(pwd)/credentials.json:/credentials.json \
-  nats-s3:latest \
+  wpnpeiris/nats-s3:latest \
   --listen 0.0.0.0:5222 \
   --natsServers nats://127.0.0.1:4222 \
   --s3.credentials /credentials.json
