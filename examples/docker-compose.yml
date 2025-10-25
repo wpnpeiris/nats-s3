@@ -1,0 +1,62 @@
+version: '3.8'
+
+# NATS-S3 Docker Compose Example
+#
+# This compose file provides a complete NATS-S3 setup with:
+# - NATS server with JetStream enabled
+# - nats-s3 gateway
+# - Pre-configured credentials
+#
+# Usage:
+#   docker-compose up -d
+#
+# Test with AWS CLI:
+#   export AWS_ACCESS_KEY_ID=demo-access-key
+#   export AWS_SECRET_ACCESS_KEY=demo-secret-key
+#   export AWS_DEFAULT_REGION=us-east-1
+#   aws s3 ls --endpoint-url=http://localhost:5222
+
+services:
+  # NATS server with JetStream for object storage
+  nats:
+    image: nats:latest
+    container_name: nats-server
+    command:
+      - "-js"
+      - "--user=nats-user"
+      - "--pass=nats-password"
+    ports:
+      - "4222:4222"
+    networks:
+      - nats-s3-network
+
+  # NATS-S3 Gateway
+  nats-s3:
+    image: wpnpeiris/nats-s3:latest
+    container_name: nats-s3-gateway
+    depends_on:
+      - nats
+    restart: on-failure
+    ports:
+      - "5222:5222"  # S3 API endpoint
+    volumes:
+      - ./credentials.json:/credentials.json:ro
+    command:
+      - "--listen=0.0.0.0:5222"
+      - "--natsServers=nats://nats:4222"
+      - "--natsUser=nats-user"
+      - "--natsPassword=nats-password"
+      - "--s3.credentials=/credentials.json"
+    environment:
+      - LOG_LEVEL=info
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:5222/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - nats-s3-network
+
+networks:
+  nats-s3-network:
+    driver: bridge
