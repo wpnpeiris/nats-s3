@@ -6,7 +6,7 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/wpnpeiris/nats-s3)](https://goreportcard.com/report/github.com/wpnpeiris/nats-s3)
 [![License](https://img.shields.io/github/license/wpnpeiris/nats-s3)](https://github.com/wpnpeiris/nats-s3/blob/main/LICENSE)
 [![GitHub Stars](https://img.shields.io/github/stars/wpnpeiris/nats-s3?style=social)](https://github.com/wpnpeiris/nats-s3/stargazers)
-[![Docker Pulls](https://img.shields.io/docker/pulls/wpnpeiris/nats-s3)](https://ghcr.io/wpnpeiris/nats-s3)
+[![Docker Pulls](https://img.shields.io/docker/pulls/wpnpeiris/nats-s3)](https://hub.docker.com/r/wpnpeiris/nats-s3)
 
 > **S3-compatible object storage powered by NATS JetStream** - Lightweight, fast, and cloud-native.
 
