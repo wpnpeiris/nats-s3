@@ -26,6 +26,9 @@ func main() {
 		natsServers       string
 		natsUser          string
 		natsPassword      string
+		natsToken         string
+		natsNKeyFile      string
+		natsCredsFile     string
 		credentialsFile   string
 		logFormat         string
 		logLevel          string
@@ -41,8 +44,11 @@ func main() {
 
 	flag.StringVar(&serverListen, "listen", "0.0.0.0:5222", "Network host:port to listen on")
 	flag.StringVar(&natsServers, "natsServers", nats.DefaultURL, "List of NATS Servers to connect")
-	flag.StringVar(&natsUser, "natsUser", "", "Nats server user name")
-	flag.StringVar(&natsPassword, "natsPassword", "", "Nats server password")
+	flag.StringVar(&natsUser, "natsUser", "", "NATS server username (basic auth)")
+	flag.StringVar(&natsPassword, "natsPassword", "", "NATS server password (basic auth)")
+	flag.StringVar(&natsToken, "natsToken", "", "NATS server token (token auth)")
+	flag.StringVar(&natsNKeyFile, "natsNKeyFile", "", "NATS server NKey seed file path (nkey auth)")
+	flag.StringVar(&natsCredsFile, "natsCredsFile", "", "NATS server credentials file path (JWT auth)")
 	flag.StringVar(&credentialsFile, "s3.credentials", "", "Path to S3 credentials file (JSON format)")
 	flag.StringVar(&logFormat, "log.format", "logfmt", "log output format: logfmt or json")
 	flag.StringVar(&logLevel, "log.level", "info", "log level: debug, info, warn, error")
@@ -72,7 +78,31 @@ func main() {
 	}
 	logging.Info(logger, "msg", "Loaded S3 credentials", "count", credStore.Count(), "store", credStore.GetName(), "file", credentialsFile)
 
-	gateway, err := server.NewGatewayServer(logger, natsServers, natsUser, natsPassword, credStore)
+	// Build NATS connection options based on auth type (priority order)
+	var natsOptions []nats.Option
+
+	if natsUser != "" && natsPassword != "" {
+		logging.Info(logger, "msg", "Using NATS username/password authentication")
+		natsOptions = append(natsOptions, nats.UserInfo(natsUser, natsPassword))
+	} else if natsToken != "" {
+		logging.Info(logger, "msg", "Using NATS token authentication")
+		natsOptions = append(natsOptions, nats.Token(natsToken))
+	} else if natsNKeyFile != "" {
+		logging.Info(logger, "msg", "Using NATS NKey authentication", "file", natsNKeyFile)
+		opt, err := nats.NkeyOptionFromSeed(natsNKeyFile)
+		if err != nil {
+			logging.Error(logger, "msg", "Failed to load NKey file", "file", natsNKeyFile, "err", err)
+			os.Exit(1)
+		}
+		natsOptions = append(natsOptions, opt)
+	} else if natsCredsFile != "" {
+		logging.Info(logger, "msg", "Using NATS JWT/Credentials authentication", "file", natsCredsFile)
+		natsOptions = append(natsOptions, nats.UserCredentials(natsCredsFile))
+	} else {
+		logging.Info(logger, "msg", "Using NATS anonymous connection (no authentication)")
+	}
+
+	gateway, err := server.NewGatewayServer(logger, natsServers, natsOptions, credStore)
 	if err != nil {
 		logging.Error(logger, "msg", "Failed to initialize NATS S3 server", "err", err)
 		os.Exit(1)

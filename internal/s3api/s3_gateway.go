@@ -27,13 +27,8 @@ type S3Gateway struct {
 }
 
 // NewS3Gateway creates a gateway instance and establishes a connection to
-// NATS using the given servers and credentials. Returns an error if initialization fails.
-func NewS3Gateway(logger log.Logger, natsServers string, natsUser string, natsPassword string, credStore credential.Store) (*S3Gateway, error) {
-	var natsOptions []nats.Option
-	if natsUser != "" && natsPassword != "" {
-		natsOptions = append(natsOptions, nats.UserInfo(natsUser, natsPassword))
-	}
-
+// NATS using the given servers and connection options. Returns an error if initialization fails.
+func NewS3Gateway(logger log.Logger, natsServers string, natsOptions []nats.Option, credStore credential.Store) (*S3Gateway, error) {
 	natsClient := client.NewClient("s3-gateway")
 	err := natsClient.SetupConnectionToNATS(natsServers, natsOptions...)
 	if err != nil {
