@@ -257,3 +257,94 @@ func (c *NatsObjectClient) PutObject(bucket string,
 
 	return os.Put(&meta, bytes.NewReader(data))
 }
+
+// GetObjectRetention retrieves retention metadata for an object
+func (c *NatsObjectClient) GetObjectRetention(bucket string, key string) (mode string, retainUntilDate string, err error) {
+	logging.Info(c.logger, "msg", fmt.Sprintf("Get object retention: %s/%s", bucket, key))
+	nc := c.client.NATS()
+	js, err := nc.JetStream()
+	if err != nil {
+		logging.Error(c.logger, "msg", "Error at GetObjectRetention when nc.JetStream()", "err", err)
+		return "", "", err
+	}
+	os, err := js.ObjectStore(bucket)
+	if err != nil {
+		logging.Error(c.logger, "msg", "Error at GetObjectRetention", "err", err)
+		if errors.Is(err, nats.ErrStreamNotFound) {
+			return "", "", ErrBucketNotFound
+		}
+		return "", "", err
+	}
+
+	info, err := os.GetInfo(key)
+	if err != nil {
+		if errors.Is(err, nats.ErrObjectNotFound) {
+			return "", "", ErrObjectNotFound
+		}
+		logging.Error(c.logger, "msg", "Error getting object info", "err", err)
+		return "", "", err
+	}
+
+	// Check if retention metadata exists
+	mode, modeExists := info.Metadata["x-amz-object-lock-mode"]
+	retainUntilDate, dateExists := info.Metadata["x-amz-object-lock-retain-until-date"]
+
+	if !modeExists || !dateExists {
+		// No retention configuration exists
+		return "", "", ErrObjectNotFound
+	}
+
+	return mode, retainUntilDate, nil
+}
+
+// PutObjectRetention sets retention metadata for an existing object
+func (c *NatsObjectClient) PutObjectRetention(bucket string, key string, mode string, retainUntilDate string) error {
+	logging.Info(c.logger, "msg", fmt.Sprintf("Put object retention: %s/%s mode=%s until=%s", bucket, key, mode, retainUntilDate))
+	nc := c.client.NATS()
+	js, err := nc.JetStream()
+	if err != nil {
+		logging.Error(c.logger, "msg", "Error at PutObjectRetention when nc.JetStream()", "err", err)
+		return err
+	}
+	os, err := js.ObjectStore(bucket)
+	if err != nil {
+		logging.Error(c.logger, "msg", "Error at PutObjectRetention", "err", err)
+		if errors.Is(err, nats.ErrStreamNotFound) {
+			return ErrBucketNotFound
+		}
+		return err
+	}
+
+	// Get existing object info
+	info, err := os.GetInfo(key)
+	if err != nil {
+		if errors.Is(err, nats.ErrObjectNotFound) {
+			return ErrObjectNotFound
+		}
+		logging.Error(c.logger, "msg", "Error getting object info", "err", err)
+		return err
+	}
+
+	// Update metadata with retention info
+	if info.Metadata == nil {
+		info.Metadata = make(map[string]string)
+	}
+	info.Metadata["x-amz-object-lock-mode"] = mode
+	info.Metadata["x-amz-object-lock-retain-until-date"] = retainUntilDate
+
+	// Use UpdateMeta to efficiently update only metadata without touching object data
+	meta := &nats.ObjectMeta{
+		Name:        info.Name,
+		Description: info.Description,
+		Metadata:    info.Metadata,
+		Headers:     info.Headers,
+	}
+
+	err = os.UpdateMeta(key, meta)
+	if err != nil {
+		logging.Error(c.logger, "msg", "Error updating object metadata", "err", err)
+		return err
+	}
+
+	return nil
+}

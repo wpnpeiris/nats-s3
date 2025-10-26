@@ -274,6 +274,38 @@ func (s *S3Gateway) Download(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// GetObjectRetention returns object retention configuration (mode and retain-until-date)
+func (s *S3Gateway) GetObjectRetention(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	bucket := vars["bucket"]
+	key := vars["key"]
+
+	log.Printf("GetObjectRetention: bucket=%s key=%s", bucket, key)
+
+	mode, retainUntilDate, err := s.client.GetObjectRetention(bucket, key)
+	if err != nil {
+		if errors.Is(err, client.ErrBucketNotFound) {
+			model.WriteErrorResponse(w, r, model.ErrNoSuchBucket)
+			return
+		}
+		if errors.Is(err, client.ErrObjectNotFound) {
+			// No retention configuration exists
+			model.WriteErrorResponse(w, r, model.ErrNoSuchKey)
+			return
+		}
+		log.Printf("Error getting object retention: %v", err)
+		model.WriteErrorResponse(w, r, model.ErrInternalError)
+		return
+	}
+
+	response := model.ObjectRetentionResponse{
+		Mode:            mode,
+		RetainUntilDate: retainUntilDate,
+	}
+
+	model.WriteXMLResponse(w, r, http.StatusOK, response)
+}
+
 // HeadObject writes object metadata headers without a response body.
 func (s *S3Gateway) HeadObject(w http.ResponseWriter, r *http.Request) {
 	bucket := mux.Vars(r)["bucket"]
@@ -354,6 +386,70 @@ func (s *S3Gateway) ListObjects(w http.ResponseWriter, r *http.Request) {
 		model.WriteErrorResponse(w, r, model.ErrInternalError)
 		return
 	}
+}
+
+// UpdateObjectRetention sets object retention configuration (mode and retain-until-date)
+func (s *S3Gateway) UpdateObjectRetention(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	bucket := vars["bucket"]
+	key := vars["key"]
+
+	log.Printf("PutObjectRetention: bucket=%s key=%s", bucket, key)
+
+	// Parse retention configuration from request body
+	var retention model.ObjectRetention
+	if err := xml.NewDecoder(r.Body).Decode(&retention); err != nil {
+		log.Printf("Error decoding retention XML: %v", err)
+		model.WriteErrorResponse(w, r, model.ErrMalformedXML)
+		return
+	}
+
+	// Validate required fields
+	if retention.Mode == nil || *retention.Mode == "" {
+		log.Printf("Missing retention mode")
+		model.WriteErrorResponse(w, r, model.ErrMalformedXML)
+		return
+	}
+	if retention.RetainUntilDate == nil || *retention.RetainUntilDate == "" {
+		log.Printf("Missing retain until date")
+		model.WriteErrorResponse(w, r, model.ErrMalformedXML)
+		return
+	}
+
+	// Validate mode is either GOVERNANCE or COMPLIANCE
+	mode := *retention.Mode
+	if mode != "GOVERNANCE" && mode != "COMPLIANCE" {
+		log.Printf("Invalid retention mode: %s", mode)
+		model.WriteErrorResponse(w, r, model.ErrMalformedXML)
+		return
+	}
+
+	// Validate date format (ISO 8601)
+	retainUntilDate := *retention.RetainUntilDate
+	_, err := time.Parse(time.RFC3339, retainUntilDate)
+	if err != nil {
+		log.Printf("Invalid retention date format: %s (error: %v)", retainUntilDate, err)
+		model.WriteErrorResponse(w, r, model.ErrMalformedXML)
+		return
+	}
+
+	// Set retention in NATS object metadata
+	err = s.client.PutObjectRetention(bucket, key, mode, retainUntilDate)
+	if err != nil {
+		if errors.Is(err, client.ErrBucketNotFound) {
+			model.WriteErrorResponse(w, r, model.ErrNoSuchBucket)
+			return
+		}
+		if errors.Is(err, client.ErrObjectNotFound) {
+			model.WriteErrorResponse(w, r, model.ErrNoSuchKey)
+			return
+		}
+		log.Printf("Error setting object retention: %v", err)
+		model.WriteErrorResponse(w, r, model.ErrInternalError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
 }
 
 // Upload stores an object and responds with 200 and an ETag header.
@@ -444,7 +540,12 @@ func extractMetadata(r *http.Request) map[string]string {
 	meta := map[string]string{}
 	for name, vals := range r.Header {
 		ln := strings.ToLower(name)
+		// Extract user metadata (x-amz-meta-*)
 		if strings.HasPrefix(ln, "x-amz-meta-") {
+			meta[ln] = strings.Join(vals, ",")
+		}
+		// Extract object retention headers if present during PUT
+		if ln == "x-amz-object-lock-mode" || ln == "x-amz-object-lock-retain-until-date" {
 			meta[ln] = strings.Join(vals, ",")
 		}
 	}

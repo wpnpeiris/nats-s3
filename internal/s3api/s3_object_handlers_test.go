@@ -423,3 +423,176 @@ func TestListObjects_WithDelimiter(t *testing.T) {
 		t.Errorf("Expected Delimiter '/', got '%s'", result.Delimiter)
 	}
 }
+
+func TestObjectRetention(t *testing.T) {
+	s := testutil.StartJSServer(t)
+	defer s.Shutdown()
+
+	logger := logging.NewLogger(logging.Config{Level: "debug"})
+	gw, err := NewS3Gateway(logger, s.ClientURL(), "", "", nil)
+	if err != nil {
+		t.Fatalf("failed to create S3 gateway: %v", err)
+	}
+
+	// Create bucket and object
+	natsEndpoint := s.Addr().String()
+	nc, err := nats.Connect(natsEndpoint)
+	nc.SetClosedHandler(func(_ *nats.Conn) {})
+	defer nc.Close()
+
+	js, err := nc.JetStream()
+	if err != nil {
+		t.Fatalf("JetStream failed: %v", err)
+	}
+
+	bucket := "retention-test"
+	if _, err := js.CreateObjectStore(&nats.ObjectStoreConfig{Bucket: bucket}); err != nil {
+		t.Fatalf("create object store failed: %v", err)
+	}
+
+	r := mux.NewRouter()
+	gw.RegisterRoutes(r)
+
+	key := "testfile.txt"
+	data := "test data for retention"
+
+	// PUT object first
+	putReq := httptest.NewRequest("PUT", "/"+bucket+"/"+key, strings.NewReader(data))
+	putRec := httptest.NewRecorder()
+	r.ServeHTTP(putRec, putReq)
+	if putRec.Code != 200 {
+		t.Fatalf("PUT object failed with status %d", putRec.Code)
+	}
+
+	// Test 1: PUT retention
+	retentionXML := `<Retention>
+		<Mode>GOVERNANCE</Mode>
+		<RetainUntilDate>2025-12-31T23:59:59Z</RetainUntilDate>
+	</Retention>`
+
+	putRetReq := httptest.NewRequest("PUT", "/"+bucket+"/"+key+"?retention", strings.NewReader(retentionXML))
+	putRetRec := httptest.NewRecorder()
+	r.ServeHTTP(putRetRec, putRetReq)
+
+	if putRetRec.Code != 200 {
+		body, _ := io.ReadAll(putRetRec.Body)
+		t.Fatalf("PUT retention failed with status %d, body: %s", putRetRec.Code, string(body))
+	}
+
+	// Test 2: GET retention
+	getRetReq := httptest.NewRequest("GET", "/"+bucket+"/"+key+"?retention", nil)
+	getRetRec := httptest.NewRecorder()
+	r.ServeHTTP(getRetRec, getRetReq)
+
+	if getRetRec.Code != 200 {
+		body, _ := io.ReadAll(getRetRec.Body)
+		t.Fatalf("GET retention failed with status %d, body: %s", getRetRec.Code, string(body))
+	}
+
+	// Parse response
+	var retention struct {
+		XMLName         xml.Name `xml:"Retention"`
+		Mode            string   `xml:"Mode"`
+		RetainUntilDate string   `xml:"RetainUntilDate"`
+	}
+
+	if err := xml.NewDecoder(getRetRec.Body).Decode(&retention); err != nil {
+		t.Fatalf("Failed to decode retention response: %v", err)
+	}
+
+	if retention.Mode != "GOVERNANCE" {
+		t.Errorf("Expected Mode 'GOVERNANCE', got '%s'", retention.Mode)
+	}
+
+	if retention.RetainUntilDate != "2025-12-31T23:59:59Z" {
+		t.Errorf("Expected RetainUntilDate '2025-12-31T23:59:59Z', got '%s'", retention.RetainUntilDate)
+	}
+
+	// Test 3: GET retention on object without retention (should return error)
+	key2 := "noretention.txt"
+	putReq2 := httptest.NewRequest("PUT", "/"+bucket+"/"+key2, strings.NewReader("data"))
+	putRec2 := httptest.NewRecorder()
+	r.ServeHTTP(putRec2, putReq2)
+
+	getRetReq2 := httptest.NewRequest("GET", "/"+bucket+"/"+key2+"?retention", nil)
+	getRetRec2 := httptest.NewRecorder()
+	r.ServeHTTP(getRetRec2, getRetReq2)
+
+	if getRetRec2.Code == 200 {
+		t.Errorf("Expected error for object without retention, got status 200")
+	}
+}
+
+func TestObjectRetentionOnUpload(t *testing.T) {
+	s := testutil.StartJSServer(t)
+	defer s.Shutdown()
+
+	logger := logging.NewLogger(logging.Config{Level: "debug"})
+	gw, err := NewS3Gateway(logger, s.ClientURL(), "", "", nil)
+	if err != nil {
+		t.Fatalf("failed to create S3 gateway: %v", err)
+	}
+
+	// Create bucket
+	natsEndpoint := s.Addr().String()
+	nc, err := nats.Connect(natsEndpoint)
+	nc.SetClosedHandler(func(_ *nats.Conn) {})
+	defer nc.Close()
+
+	js, err := nc.JetStream()
+	if err != nil {
+		t.Fatalf("JetStream failed: %v", err)
+	}
+
+	bucket := "retention-upload-test"
+	if _, err := js.CreateObjectStore(&nats.ObjectStoreConfig{Bucket: bucket}); err != nil {
+		t.Fatalf("create object store failed: %v", err)
+	}
+
+	r := mux.NewRouter()
+	gw.RegisterRoutes(r)
+
+	key := "testfile.txt"
+	data := "test data with retention on upload"
+
+	// PUT object WITH retention headers
+	putReq := httptest.NewRequest("PUT", "/"+bucket+"/"+key, strings.NewReader(data))
+	putReq.Header.Set("x-amz-object-lock-mode", "COMPLIANCE")
+	putReq.Header.Set("x-amz-object-lock-retain-until-date", "2026-06-30T12:00:00Z")
+	putRec := httptest.NewRecorder()
+	r.ServeHTTP(putRec, putReq)
+
+	if putRec.Code != 200 {
+		body, _ := io.ReadAll(putRec.Body)
+		t.Fatalf("PUT object with retention failed with status %d, body: %s", putRec.Code, string(body))
+	}
+
+	// GET retention to verify it was set during upload
+	getRetReq := httptest.NewRequest("GET", "/"+bucket+"/"+key+"?retention", nil)
+	getRetRec := httptest.NewRecorder()
+	r.ServeHTTP(getRetRec, getRetReq)
+
+	if getRetRec.Code != 200 {
+		body, _ := io.ReadAll(getRetRec.Body)
+		t.Fatalf("GET retention failed with status %d, body: %s", getRetRec.Code, string(body))
+	}
+
+	// Parse and verify response
+	var retention struct {
+		XMLName         xml.Name `xml:"Retention"`
+		Mode            string   `xml:"Mode"`
+		RetainUntilDate string   `xml:"RetainUntilDate"`
+	}
+
+	if err := xml.NewDecoder(getRetRec.Body).Decode(&retention); err != nil {
+		t.Fatalf("Failed to decode retention response: %v", err)
+	}
+
+	if retention.Mode != "COMPLIANCE" {
+		t.Errorf("Expected Mode 'COMPLIANCE', got '%s'", retention.Mode)
+	}
+
+	if retention.RetainUntilDate != "2026-06-30T12:00:00Z" {
+		t.Errorf("Expected RetainUntilDate '2026-06-30T12:00:00Z', got '%s'", retention.RetainUntilDate)
+	}
+}
