@@ -159,16 +159,16 @@ func WriteErrorResponse(w http.ResponseWriter, r *http.Request, errorCode ErrorC
 
 // ObjectRetention represents object retention configuration
 type ObjectRetention struct {
-	XMLName xml.Name        `xml:"Retention"`
-	Mode    *string         `xml:"Mode,omitempty"`
-	RetainUntilDate *string `xml:"RetainUntilDate,omitempty"`
+	XMLName         xml.Name `xml:"Retention"`
+	Mode            *string  `xml:"Mode,omitempty"`
+	RetainUntilDate *string  `xml:"RetainUntilDate,omitempty"`
 }
 
 // ObjectRetentionResponse is the response for GetObjectRetention
 type ObjectRetentionResponse struct {
-	XMLName xml.Name `xml:"http://s3.amazonaws.com/doc/2006-03-01/ Retention"`
-	Mode    string   `xml:"Mode"`
-	RetainUntilDate string `xml:"RetainUntilDate"`
+	XMLName         xml.Name `xml:"http://s3.amazonaws.com/doc/2006-03-01/ Retention"`
+	Mode            string   `xml:"Mode"`
+	RetainUntilDate string   `xml:"RetainUntilDate"`
 }
 
 // WriteResponse writes headers, status code, and optional body, flushing the

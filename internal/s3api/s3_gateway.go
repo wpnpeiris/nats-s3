@@ -156,7 +156,7 @@ func (s *S3Gateway) RegisterRoutes(router *mux.Router) {
 	addObjectSubresource(r, http.MethodGet, "legal-hold", s.iam.Auth(s.notImplemented))
 	addObjectSubresource(r, http.MethodPut, "legal-hold", s.iam.Auth(s.notImplemented))
 	addObjectSubresource(r, http.MethodGet, "retention", s.iam.Auth(s.GetObjectRetention))
-	addObjectSubresource(r, http.MethodPut, "retention", s.iam.Auth(s.PutObjectRetention))
+	addObjectSubresource(r, http.MethodPut, "retention", s.iam.Auth(s.UpdateObjectRetention))
 
 	// Multipart upload operations on object
 	addObjectSubresource(r, http.MethodPost, "uploads", s.iam.Auth(s.InitiateMultipartUpload)) // Initiate multipart upload

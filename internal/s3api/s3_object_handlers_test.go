@@ -522,3 +522,77 @@ func TestObjectRetention(t *testing.T) {
 		t.Errorf("Expected error for object without retention, got status 200")
 	}
 }
+
+func TestObjectRetentionOnUpload(t *testing.T) {
+	s := testutil.StartJSServer(t)
+	defer s.Shutdown()
+
+	logger := logging.NewLogger(logging.Config{Level: "debug"})
+	gw, err := NewS3Gateway(logger, s.ClientURL(), "", "", nil)
+	if err != nil {
+		t.Fatalf("failed to create S3 gateway: %v", err)
+	}
+
+	// Create bucket
+	natsEndpoint := s.Addr().String()
+	nc, err := nats.Connect(natsEndpoint)
+	nc.SetClosedHandler(func(_ *nats.Conn) {})
+	defer nc.Close()
+
+	js, err := nc.JetStream()
+	if err != nil {
+		t.Fatalf("JetStream failed: %v", err)
+	}
+
+	bucket := "retention-upload-test"
+	if _, err := js.CreateObjectStore(&nats.ObjectStoreConfig{Bucket: bucket}); err != nil {
+		t.Fatalf("create object store failed: %v", err)
+	}
+
+	r := mux.NewRouter()
+	gw.RegisterRoutes(r)
+
+	key := "testfile.txt"
+	data := "test data with retention on upload"
+
+	// PUT object WITH retention headers
+	putReq := httptest.NewRequest("PUT", "/"+bucket+"/"+key, strings.NewReader(data))
+	putReq.Header.Set("x-amz-object-lock-mode", "COMPLIANCE")
+	putReq.Header.Set("x-amz-object-lock-retain-until-date", "2026-06-30T12:00:00Z")
+	putRec := httptest.NewRecorder()
+	r.ServeHTTP(putRec, putReq)
+
+	if putRec.Code != 200 {
+		body, _ := io.ReadAll(putRec.Body)
+		t.Fatalf("PUT object with retention failed with status %d, body: %s", putRec.Code, string(body))
+	}
+
+	// GET retention to verify it was set during upload
+	getRetReq := httptest.NewRequest("GET", "/"+bucket+"/"+key+"?retention", nil)
+	getRetRec := httptest.NewRecorder()
+	r.ServeHTTP(getRetRec, getRetReq)
+
+	if getRetRec.Code != 200 {
+		body, _ := io.ReadAll(getRetRec.Body)
+		t.Fatalf("GET retention failed with status %d, body: %s", getRetRec.Code, string(body))
+	}
+
+	// Parse and verify response
+	var retention struct {
+		XMLName         xml.Name `xml:"Retention"`
+		Mode            string   `xml:"Mode"`
+		RetainUntilDate string   `xml:"RetainUntilDate"`
+	}
+
+	if err := xml.NewDecoder(getRetRec.Body).Decode(&retention); err != nil {
+		t.Fatalf("Failed to decode retention response: %v", err)
+	}
+
+	if retention.Mode != "COMPLIANCE" {
+		t.Errorf("Expected Mode 'COMPLIANCE', got '%s'", retention.Mode)
+	}
+
+	if retention.RetainUntilDate != "2026-06-30T12:00:00Z" {
+		t.Errorf("Expected RetainUntilDate '2026-06-30T12:00:00Z', got '%s'", retention.RetainUntilDate)
+	}
+}
