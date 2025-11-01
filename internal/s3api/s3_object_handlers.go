@@ -213,65 +213,71 @@ func (s *S3Gateway) DeleteObjects(w http.ResponseWriter, r *http.Request) {
 // Download writes object content to the response and sets typical S3 headers
 // such as Last-Modified, ETag, Content-Type, and Content-Length.
 func (s *S3Gateway) Download(w http.ResponseWriter, r *http.Request) {
-	bucket := mux.Vars(r)["bucket"]
-	key := mux.Vars(r)["key"]
+       bucket := mux.Vars(r)["bucket"]
+       key := mux.Vars(r)["key"]
 
-	info, data, err := s.client.GetObject(bucket, key)
-	if err != nil {
-		if errors.Is(err, client.ErrBucketNotFound) {
-			model.WriteErrorResponse(w, r, model.ErrNoSuchBucket)
-			return
-		}
-		if errors.Is(err, client.ErrObjectNotFound) {
-			model.WriteErrorResponse(w, r, model.ErrNoSuchKey)
-			return
-		}
-		model.WriteErrorResponse(w, r, model.ErrInternalError)
-		return
-	}
+       // IF key is empty, return error
+       if key == "" {
+	       model.WriteErrorResponse(w, r, model.ErrInvalidRequest)
+	       return
+       }
 
-	// Set common headers
-	if info != nil {
-		updateLastModifiedHeader(info, w)
-		updateETagHeader(info, w)
-		updateContentTypeHeaders(info, w)
-	}
+       info, data, err := s.client.GetObject(bucket, key)
+       if err != nil {
+	       if errors.Is(err, client.ErrBucketNotFound) {
+		       model.WriteErrorResponse(w, r, model.ErrNoSuchBucket)
+		       return
+	       }
+	       if errors.Is(err, client.ErrObjectNotFound) {
+		       model.WriteErrorResponse(w, r, model.ErrNoSuchKey)
+		       return
+	       }
+	       model.WriteErrorResponse(w, r, model.ErrInternalError)
+	       return
+       }
 
-	// Check for Range header
-	rangeHeader := r.Header.Get("Range")
-	if rangeHeader != "" {
-		// Parse and handle range request
-		start, end, err := parseRangeHeader(rangeHeader, len(data))
-		if err != nil {
-			// Invalid range - return 416 Range Not Satisfiable
-			w.Header().Set("Content-Range", fmt.Sprintf("bytes */%d", len(data)))
-			w.WriteHeader(http.StatusRequestedRangeNotSatisfiable)
-			return
-		}
+       // Set common headers
+       if info != nil {
+	       updateLastModifiedHeader(info, w)
+	       updateETagHeader(info, w)
+	       updateContentTypeHeaders(info, w)
+       }
 
-		// Return partial content
-		rangeData := data[start : end+1]
-		w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, end, len(data)))
-		w.Header().Set("Content-Length", fmt.Sprintf("%d", len(rangeData)))
-		w.WriteHeader(http.StatusPartialContent)
+       // Check for Range header
+       rangeHeader := r.Header.Get("Range")
+       if rangeHeader != "" {
+	       // Parse and handle range request
+	       start, end, err := parseRangeHeader(rangeHeader, len(data))
+	       if err != nil {
+		       // Invalid range - return 416 Range Not Satisfiable
+		       w.Header().Set("Content-Range", fmt.Sprintf("bytes */%d", len(data)))
+		       w.WriteHeader(http.StatusRequestedRangeNotSatisfiable)
+		       return
+	       }
 
-		_, err = w.Write(rangeData)
-		if err != nil {
-			log.Printf("Error writing range response body for %s/%s: %s", bucket, key, err)
-		}
-		return
-	}
+	       // Return partial content
+	       rangeData := data[start : end+1]
+	       w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, end, len(data)))
+	       w.Header().Set("Content-Length", fmt.Sprintf("%d", len(rangeData)))
+	       w.WriteHeader(http.StatusPartialContent)
 
-	// No range header - return full content
-	if info != nil {
-		updateContentLength(info, w)
-	}
+	       _, err = w.Write(rangeData)
+	       if err != nil {
+		       log.Printf("Error writing range response body for %s/%s: %s", bucket, key, err)
+	       }
+	       return
+       }
 
-	_, err = w.Write(data)
-	if err != nil {
-		log.Printf("Error writing response body for %s/%s: %s", bucket, key, err)
-		return
-	}
+       // No range header - return full content
+       if info != nil {
+	       updateContentLength(info, w)
+       }
+
+       _, err = w.Write(data)
+       if err != nil {
+	       log.Printf("Error writing response body for %s/%s: %s", bucket, key, err)
+	       return
+       }
 }
 
 // GetObjectRetention returns object retention configuration (mode and retain-until-date)

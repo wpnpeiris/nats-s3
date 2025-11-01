@@ -596,3 +596,146 @@ func TestObjectRetentionOnUpload(t *testing.T) {
 		t.Errorf("Expected RetainUntilDate '2026-06-30T12:00:00Z', got '%s'", retention.RetainUntilDate)
 	}
 }
+
+// TestListObjects_WithTrailingSlash tests the bug fix for issue where
+// GET /bucket/?list-type=2 was incorrectly trying to download an empty key object
+// instead of listing bucket contents
+func TestListObjects_WithTrailingSlash(t *testing.T) {
+	s := testutil.StartJSServer(t)
+	defer s.Shutdown()
+
+	logger := logging.NewLogger(logging.Config{Level: "debug"})
+	gw, err := NewS3Gateway(logger, s.ClientURL(), nil, nil)
+	if err != nil {
+		t.Fatalf("failed to create S3 gateway: %v", err)
+	}
+
+	// Setup NATS connection and create bucket
+	natsEndpoint := s.Addr().String()
+	nc, err := nats.Connect(natsEndpoint)
+	nc.SetClosedHandler(func(_ *nats.Conn) {})
+	defer nc.Close()
+
+	js, err := nc.JetStream()
+	if err != nil {
+		t.Fatalf("JetStream failed: %v", err)
+	}
+	bucket := "test-trailing-slash"
+	if _, err := js.CreateObjectStore(&nats.ObjectStoreConfig{Bucket: bucket}); err != nil {
+		t.Fatalf("create object store failed: %v", err)
+	}
+
+	r := mux.NewRouter()
+	gw.RegisterRoutes(r)
+
+	// Upload test objects
+	testObjects := []string{"file1.txt", "file2.txt", "dir/file3.txt"}
+	for _, key := range testObjects {
+		req := httptest.NewRequest("PUT", "/"+bucket+"/"+key, strings.NewReader("data"))
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+		if rec.Code != 200 {
+			t.Fatalf("PUT %s unexpected status: %d", key, rec.Code)
+		}
+	}
+
+	// Test 1: List with trailing slash and no query params
+	t.Run("TrailingSlashNoQuery", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/"+bucket+"/", nil)
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+
+		if rec.Code != 200 {
+			t.Fatalf("GET /%s/ unexpected status: %d, body: %s", bucket, rec.Code, rec.Body.String())
+		}
+
+		// Verify it's an XML list response, not object data
+		var result ListBucketResult
+		if err := xml.Unmarshal(rec.Body.Bytes(), &result); err != nil {
+			t.Fatalf("Expected XML list response, got error: %v\nBody: %s", err, rec.Body.String())
+		}
+
+		if result.Name != bucket {
+			t.Errorf("Expected bucket name %q, got %q", bucket, result.Name)
+		}
+
+		if len(result.Contents) != 3 {
+			t.Errorf("Expected 3 objects, got %d", len(result.Contents))
+		}
+	})
+
+	// Test 2: List with trailing slash and list-type=2 (ListObjectsV2)
+	t.Run("TrailingSlashWithListType2", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/"+bucket+"/?list-type=2", nil)
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+
+		if rec.Code != 200 {
+			t.Fatalf("GET /%s/?list-type=2 unexpected status: %d, body: %s", bucket, rec.Code, rec.Body.String())
+		}
+
+		// Verify it's an XML list response
+		var result ListBucketResult
+		if err := xml.Unmarshal(rec.Body.Bytes(), &result); err != nil {
+			t.Fatalf("Expected XML list response, got error: %v\nBody: %s", err, rec.Body.String())
+		}
+
+		if result.Name != bucket {
+			t.Errorf("Expected bucket name %q, got %q", bucket, result.Name)
+		}
+
+		if len(result.Contents) != 3 {
+			t.Errorf("Expected 3 objects, got %d", len(result.Contents))
+		}
+	})
+
+	// Test 3: List with trailing slash, list-type=2, and other params
+	t.Run("TrailingSlashWithMultipleParams", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/"+bucket+"/?list-type=2&prefix=file", nil)
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+
+		if rec.Code != 200 {
+			t.Fatalf("GET /%s/?list-type=2&prefix=file unexpected status: %d, body: %s", bucket, rec.Code, rec.Body.String())
+		}
+
+		// Verify it's an XML list response
+		var result ListBucketResult
+		if err := xml.Unmarshal(rec.Body.Bytes(), &result); err != nil {
+			t.Fatalf("Expected XML list response, got error: %v\nBody: %s", err, rec.Body.String())
+		}
+
+		if result.Name != bucket {
+			t.Errorf("Expected bucket name %q, got %q", bucket, result.Name)
+		}
+
+		if result.Prefix != "file" {
+			t.Errorf("Expected prefix 'file', got %q", result.Prefix)
+		}
+
+		// Should only return file1.txt and file2.txt (prefix "file")
+		if len(result.Contents) != 2 {
+			t.Errorf("Expected 2 objects with prefix 'file', got %d", len(result.Contents))
+		}
+	})
+
+	// Test 4: Verify that without trailing slash also works
+	t.Run("NoTrailingSlash", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/"+bucket+"?list-type=2", nil)
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+
+		if rec.Code != 200 {
+			t.Fatalf("GET /%s?list-type=2 unexpected status: %d", bucket, rec.Code)
+		}
+
+		var result ListBucketResult
+		if err := xml.Unmarshal(rec.Body.Bytes(), &result); err != nil {
+			t.Fatalf("Expected XML list response, got error: %v", err)
+		}
+
+		if len(result.Contents) != 3 {
+			t.Errorf("Expected 3 objects, got %d", len(result.Contents))
+		}
+	})
+}

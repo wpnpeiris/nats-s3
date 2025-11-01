@@ -154,16 +154,16 @@ func (c *NatsObjectClient) GetObjectInfo(bucket string, key string) (*nats.Objec
 
 // GetObject retrieves an object's metadata and bytes.
 func (c *NatsObjectClient) GetObject(bucket string, key string) (*nats.ObjectInfo, []byte, error) {
-	logging.Info(c.logger, "msg", fmt.Sprintf("Delete object : [%s/%s]", bucket, key))
+	logging.Info(c.logger, "msg", fmt.Sprintf("Get object : [%s/%s]", bucket, key))
 	nc := c.client.NATS()
 	js, err := nc.JetStream()
 	if err != nil {
-		logging.Error(c.logger, "msg", "Error at GetObjectInfo", "err", err)
+		logging.Error(c.logger, "msg", "Error at GetObject", "err", err)
 		return nil, nil, err
 	}
 	os, err := js.ObjectStore(bucket)
 	if err != nil {
-		logging.Error(c.logger, "msg", "Error at GetObjectInfo", "err", err)
+		logging.Error(c.logger, "msg", "Error at GetObject", "err", err)
 		if errors.Is(err, nats.ErrStreamNotFound) {
 			return nil, nil, ErrBucketNotFound
 		}
@@ -171,7 +171,7 @@ func (c *NatsObjectClient) GetObject(bucket string, key string) (*nats.ObjectInf
 	}
 	info, err := os.GetInfo(key)
 	if err != nil {
-		logging.Error(c.logger, "msg", "Error at GetObjectInfo", "err", err)
+		logging.Error(c.logger, "msg", "Error at GetObject", "err", err)
 		if errors.Is(err, nats.ErrObjectNotFound) {
 			return nil, nil, ErrObjectNotFound
 		}
@@ -179,7 +179,7 @@ func (c *NatsObjectClient) GetObject(bucket string, key string) (*nats.ObjectInf
 	}
 	res, err := os.GetBytes(key)
 	if err != nil {
-		logging.Error(c.logger, "msg", "Error at GetObjectInfo", "err", err)
+		logging.Error(c.logger, "msg", "Error at GetObject", "err", err)
 		return nil, nil, err
 	}
 	return info, res, nil
