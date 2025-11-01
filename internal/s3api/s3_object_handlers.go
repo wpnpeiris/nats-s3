@@ -216,7 +216,7 @@ func (s *S3Gateway) Download(w http.ResponseWriter, r *http.Request) {
 	bucket := mux.Vars(r)["bucket"]
 	key := mux.Vars(r)["key"]
 
-	// IF key is empty, return error
+	// If key is empty, return error
 	if key == "" {
 		model.WriteErrorResponse(w, r, model.ErrInvalidRequest)
 		return
