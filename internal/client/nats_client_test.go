@@ -1,9 +1,11 @@
 package client
 
 import (
+	"context"
 	"fmt"
-	"github.com/nats-io/nats-server/v2/server"
 	"testing"
+
+	"github.com/nats-io/nats-server/v2/server"
 
 	nservertest "github.com/nats-io/nats-server/v2/test"
 	"github.com/nats-io/nats.go"
@@ -17,7 +19,7 @@ func TestClientSetupConnectionToNATS(t *testing.T) {
 	s := nservertest.RunServer(&opts)
 	defer s.Shutdown()
 
-	c := NewClient("unit-test")
+	c := NewClient(context.Background(), "unit-test")
 	if c.ID() == "" {
 		t.Fatalf("expected non-empty client ID")
 	}

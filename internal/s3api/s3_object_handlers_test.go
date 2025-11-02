@@ -1,9 +1,8 @@
 package s3api
 
 import (
+	"context"
 	"encoding/xml"
-	"github.com/wpnpeiris/nats-s3/internal/logging"
-	"github.com/wpnpeiris/nats-s3/internal/testutil"
 	"io"
 	"net/http/httptest"
 	"strings"
@@ -11,6 +10,9 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/nats-io/nats.go"
+
+	"github.com/wpnpeiris/nats-s3/internal/logging"
+	"github.com/wpnpeiris/nats-s3/internal/testutil"
 )
 
 func TestObjectHandlers_CRUD(t *testing.T) {
@@ -18,7 +20,7 @@ func TestObjectHandlers_CRUD(t *testing.T) {
 	defer s.Shutdown()
 
 	logger := logging.NewLogger(logging.Config{Level: "debug"})
-	gw, err := NewS3Gateway(logger, s.ClientURL(), nil, nil)
+	gw, err := NewS3Gateway(context.Background(), logger, s.ClientURL(), nil, nil, S3GatewayOptions{})
 	if err != nil {
 		t.Fatalf("failed to create S3 gateway: %v", err)
 	}
@@ -123,7 +125,7 @@ func TestCopyObject_Basic(t *testing.T) {
 	defer s.Shutdown()
 
 	logger := logging.NewLogger(logging.Config{Level: "debug"})
-	gw, err := NewS3Gateway(logger, s.ClientURL(), nil, nil)
+	gw, err := NewS3Gateway(context.Background(), logger, s.ClientURL(), nil, nil, S3GatewayOptions{})
 	if err != nil {
 		t.Fatalf("failed to create S3 gateway: %v", err)
 	}
@@ -223,7 +225,7 @@ func TestCopyObject_ReplaceMetadata(t *testing.T) {
 	defer s.Shutdown()
 
 	logger := logging.NewLogger(logging.Config{Level: "debug"})
-	gw, err := NewS3Gateway(logger, s.ClientURL(), nil, nil)
+	gw, err := NewS3Gateway(context.Background(), logger, s.ClientURL(), nil, nil, S3GatewayOptions{})
 	if err != nil {
 		t.Fatalf("failed to create S3 gateway: %v", err)
 	}
@@ -292,7 +294,7 @@ func TestCopyObject_InvalidSource(t *testing.T) {
 	defer s.Shutdown()
 
 	logger := logging.NewLogger(logging.Config{Level: "debug"})
-	gw, err := NewS3Gateway(logger, s.ClientURL(), nil, nil)
+	gw, err := NewS3Gateway(context.Background(), logger, s.ClientURL(), nil, nil, S3GatewayOptions{})
 	if err != nil {
 		t.Fatalf("failed to create S3 gateway: %v", err)
 	}
@@ -338,7 +340,7 @@ func TestListObjects_WithDelimiter(t *testing.T) {
 	defer s.Shutdown()
 
 	logger := logging.NewLogger(logging.Config{Level: "debug"})
-	gw, err := NewS3Gateway(logger, s.ClientURL(), nil, nil)
+	gw, err := NewS3Gateway(context.Background(), logger, s.ClientURL(), nil, nil, S3GatewayOptions{})
 	if err != nil {
 		t.Fatalf("failed to create S3 gateway: %v", err)
 	}
@@ -429,7 +431,7 @@ func TestObjectRetention(t *testing.T) {
 	defer s.Shutdown()
 
 	logger := logging.NewLogger(logging.Config{Level: "debug"})
-	gw, err := NewS3Gateway(logger, s.ClientURL(), nil, nil)
+	gw, err := NewS3Gateway(context.Background(), logger, s.ClientURL(), nil, nil, S3GatewayOptions{})
 	if err != nil {
 		t.Fatalf("failed to create S3 gateway: %v", err)
 	}
@@ -528,7 +530,7 @@ func TestObjectRetentionOnUpload(t *testing.T) {
 	defer s.Shutdown()
 
 	logger := logging.NewLogger(logging.Config{Level: "debug"})
-	gw, err := NewS3Gateway(logger, s.ClientURL(), nil, nil)
+	gw, err := NewS3Gateway(context.Background(), logger, s.ClientURL(), nil, nil, S3GatewayOptions{})
 	if err != nil {
 		t.Fatalf("failed to create S3 gateway: %v", err)
 	}
@@ -605,7 +607,7 @@ func TestListObjects_WithTrailingSlash(t *testing.T) {
 	defer s.Shutdown()
 
 	logger := logging.NewLogger(logging.Config{Level: "debug"})
-	gw, err := NewS3Gateway(logger, s.ClientURL(), nil, nil)
+	gw, err := NewS3Gateway(context.Background(), logger, s.ClientURL(), nil, nil, S3GatewayOptions{})
 	if err != nil {
 		t.Fatalf("failed to create S3 gateway: %v", err)
 	}

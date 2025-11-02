@@ -1,6 +1,7 @@
 package client
 
 import (
+	"context"
 	"fmt"
 	"log"
 
@@ -16,6 +17,7 @@ const (
 
 // Client wraps a NATS connection and metadata used by gateway components.
 type Client struct {
+	ctx  context.Context
 	id   string
 	kind string
 	nc   *nats.Conn
@@ -23,9 +25,10 @@ type Client struct {
 
 // NewClient creates a new Client with a generated ID and the provided kind
 // used in connection names and logs.
-func NewClient(kind string) *Client {
+func NewClient(ctx context.Context, kind string) *Client {
 	id := nuid.Next()
 	return &Client{
+		ctx:  ctx,
 		id:   id,
 		kind: kind,
 	}

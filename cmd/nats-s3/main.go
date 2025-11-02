@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
@@ -16,6 +17,9 @@ import (
 var Version string
 
 func main() {
+	// Create root context
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	// Version is injected via -ldflags "-X main.Version=..." at build time.
 	// Defaults to "dev" if not set.
 	if Version == "" {
@@ -29,6 +33,7 @@ func main() {
 		natsToken         string
 		natsNKeyFile      string
 		natsCredsFile     string
+		natsReplicas      int
 		credentialsFile   string
 		logFormat         string
 		logLevel          string
@@ -49,6 +54,7 @@ func main() {
 	flag.StringVar(&natsToken, "natsToken", "", "NATS server token (token auth)")
 	flag.StringVar(&natsNKeyFile, "natsNKeyFile", "", "NATS server NKey seed file path (nkey auth)")
 	flag.StringVar(&natsCredsFile, "natsCredsFile", "", "NATS server credentials file path (JWT auth)")
+	flag.IntVar(&natsReplicas, "natsReplicas", 1, "Number of NATS replicas for each jetstream element")
 	flag.StringVar(&credentialsFile, "s3.credentials", "", "Path to S3 credentials file (JSON format)")
 	flag.StringVar(&logFormat, "log.format", "logfmt", "log output format: logfmt or json")
 	flag.StringVar(&logLevel, "log.level", "info", "log level: debug, info, warn, error")
@@ -102,7 +108,9 @@ func main() {
 		logging.Info(logger, "msg", "Using NATS anonymous connection (no authentication)")
 	}
 
-	gateway, err := server.NewGatewayServer(logger, natsServers, natsOptions, credStore)
+	gateway, err := server.NewGatewayServer(ctx, logger, natsServers, natsOptions, credStore, server.GatewayServerOptions{
+		NATSReplicas: natsReplicas,
+	})
 	if err != nil {
 		logging.Error(logger, "msg", "Failed to initialize NATS S3 server", "err", err)
 		os.Exit(1)

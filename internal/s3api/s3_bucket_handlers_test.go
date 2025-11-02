@@ -1,11 +1,13 @@
 package s3api
 
 import (
+	"context"
 	"encoding/xml"
-	"github.com/wpnpeiris/nats-s3/internal/logging"
-	"github.com/wpnpeiris/nats-s3/internal/testutil"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/wpnpeiris/nats-s3/internal/logging"
+	"github.com/wpnpeiris/nats-s3/internal/testutil"
 
 	"github.com/gorilla/mux"
 	"github.com/nats-io/nats.go"
@@ -16,7 +18,7 @@ func TestListBuckets(t *testing.T) {
 	defer s.Shutdown()
 
 	logger := logging.NewLogger(logging.Config{Level: "debug"})
-	gw, err := NewS3Gateway(logger, s.ClientURL(), nil, nil)
+	gw, err := NewS3Gateway(context.Background(), logger, s.ClientURL(), nil, nil, S3GatewayOptions{})
 	if err != nil {
 		t.Fatalf("failed to create S3 gateway: %v", err)
 	}
@@ -75,7 +77,7 @@ func TestCreateBucket(t *testing.T) {
 	defer s.Shutdown()
 
 	logger := logging.NewLogger(logging.Config{Level: "debug"})
-	gw, err := NewS3Gateway(logger, s.ClientURL(), nil, nil)
+	gw, err := NewS3Gateway(context.Background(), logger, s.ClientURL(), nil, nil, S3GatewayOptions{})
 	if err != nil {
 		t.Fatalf("failed to create S3 gateway: %v", err)
 	}
@@ -111,7 +113,7 @@ func TestCreateBucketDuplicateFails(t *testing.T) {
 	defer s.Shutdown()
 
 	logger := logging.NewLogger(logging.Config{Level: "debug"})
-	gw, err := NewS3Gateway(logger, s.ClientURL(), nil, nil)
+	gw, err := NewS3Gateway(context.Background(), logger, s.ClientURL(), nil, nil, S3GatewayOptions{})
 	if err != nil {
 		t.Fatalf("failed to create S3 gateway: %v", err)
 	}

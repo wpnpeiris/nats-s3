@@ -3,17 +3,19 @@ package s3api
 import (
 	"encoding/xml"
 	"errors"
-	"github.com/wpnpeiris/nats-s3/internal/model"
 	"io"
 	"net/http"
 	"sort"
 	"strconv"
 	"strings"
 
+	"github.com/wpnpeiris/nats-s3/internal/model"
+
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
+
 	"github.com/wpnpeiris/nats-s3/internal/client"
 )
 
@@ -33,7 +35,7 @@ func (s *S3Gateway) InitiateMultipartUpload(w http.ResponseWriter, r *http.Reque
 	bucket := mux.Vars(r)["bucket"]
 	key := mux.Vars(r)["key"]
 
-	err := s.multiPartStore.InitMultipartUpload(bucket, key, uploadID)
+	err := s.multiPartStore.InitMultipartUpload(r.Context(), bucket, key, uploadID)
 	if err != nil {
 		model.WriteErrorResponse(w, r, model.ErrInternalError)
 		return
@@ -96,7 +98,7 @@ func (s *S3Gateway) UploadPart(w http.ResponseWriter, r *http.Request) {
 		Closer: r.Body,
 	}
 
-	etag, err := s.multiPartStore.UploadPart(bucket, key, uploadID, partNum, limitedBody)
+	etag, err := s.multiPartStore.UploadPart(r.Context(), bucket, key, uploadID, partNum, limitedBody)
 	if err != nil {
 		if errors.Is(err, client.ErrUploadNotFound) || errors.Is(err, client.ErrUploadCompleted) {
 			model.WriteErrorResponse(w, r, model.ErrNoSuchUpload)
@@ -143,7 +145,7 @@ func (s *S3Gateway) CompleteMultipartUpload(w http.ResponseWriter, r *http.Reque
 	}
 
 	sortedPartNumbers := parsePartNumbers(parts)
-	etag, err := s.multiPartStore.CompleteMultipartUpload(bucket, key, uploadID, sortedPartNumbers)
+	etag, err := s.multiPartStore.CompleteMultipartUpload(r.Context(), bucket, key, uploadID, sortedPartNumbers)
 	if err != nil {
 		model.WriteErrorResponse(w, r, model.ErrInternalError)
 		return
@@ -168,7 +170,7 @@ func (s *S3Gateway) AbortMultipartUpload(w http.ResponseWriter, r *http.Request)
 		model.WriteErrorResponse(w, r, model.ErrNoSuchUpload)
 		return
 	}
-	err := s.multiPartStore.AbortMultipartUpload(bucket, key, uploadID)
+	err := s.multiPartStore.AbortMultipartUpload(r.Context(), bucket, key, uploadID)
 	if err != nil {
 		model.WriteErrorResponse(w, r, model.ErrInternalError)
 		return
@@ -205,7 +207,7 @@ func (s *S3Gateway) ListParts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	meta, err := s.multiPartStore.ListParts(bucket, key, uploadID)
+	meta, err := s.multiPartStore.ListParts(r.Context(), bucket, key, uploadID)
 	if err != nil {
 		if errors.Is(err, client.ErrUploadNotFound) || errors.Is(err, client.ErrUploadCompleted) {
 			model.WriteErrorResponse(w, r, model.ErrNoSuchUpload)

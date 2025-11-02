@@ -2,8 +2,10 @@ package client
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
+
 	"github.com/go-kit/log"
 	"github.com/nats-io/nats.go"
 	"github.com/wpnpeiris/nats-s3/internal/logging"
@@ -19,12 +21,14 @@ var ErrBucketAlreadyExists = errors.New("bucket already exists")
 // NatsObjectClient provides convenience helpers for common NATS JetStream
 // Object Store operations, built on top of the base Client connection.
 type NatsObjectClient struct {
+	ctx    context.Context
 	logger log.Logger
 	client *Client
 }
 
-func NewNatsObjectClient(logger log.Logger, natsClient *Client) (*NatsObjectClient, error) {
+func NewNatsObjectClient(ctx context.Context, logger log.Logger, natsClient *Client) (*NatsObjectClient, error) {
 	return &NatsObjectClient{
+		ctx:    ctx,
 		logger: logger,
 		client: natsClient,
 	}, nil

@@ -3,14 +3,15 @@ package s3api
 import (
 	"encoding/xml"
 	"errors"
-	"github.com/gorilla/mux"
-	"github.com/wpnpeiris/nats-s3/internal/client"
-	"github.com/wpnpeiris/nats-s3/internal/model"
 	"net/http"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/gorilla/mux"
+
+	"github.com/wpnpeiris/nats-s3/internal/client"
+	"github.com/wpnpeiris/nats-s3/internal/model"
 )
 
 // BucketsResult is the XML envelope for ListBuckets responses.

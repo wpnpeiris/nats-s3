@@ -1,6 +1,7 @@
 package s3api
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"time"
@@ -8,6 +9,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/gorilla/mux"
 	"github.com/nats-io/nats.go"
+
 	"github.com/wpnpeiris/nats-s3/internal/auth"
 	"github.com/wpnpeiris/nats-s3/internal/client"
 	"github.com/wpnpeiris/nats-s3/internal/credential"
@@ -15,6 +17,10 @@ import (
 	"github.com/wpnpeiris/nats-s3/internal/metrics"
 	"github.com/wpnpeiris/nats-s3/internal/validation"
 )
+
+type S3GatewayOptions struct {
+	Replicas int
+}
 
 // S3Gateway registers S3-compatible HTTP routes (2006-03-01) and delegates
 // implemented operations to NATS JetStream-backed object storage.
@@ -28,19 +34,26 @@ type S3Gateway struct {
 
 // NewS3Gateway creates a gateway instance and establishes a connection to
 // NATS using the given servers and connection options. Returns an error if initialization fails.
-func NewS3Gateway(logger log.Logger, natsServers string, natsOptions []nats.Option, credStore credential.Store) (*S3Gateway, error) {
-	natsClient := client.NewClient("s3-gateway")
+func NewS3Gateway(ctx context.Context,
+	logger log.Logger,
+	natsServers string,
+	natsOptions []nats.Option,
+	credStore credential.Store,
+	opts S3GatewayOptions) (*S3Gateway, error) {
+	natsClient := client.NewClient(ctx, "s3-gateway")
 	err := natsClient.SetupConnectionToNATS(natsServers, natsOptions...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to NATS: %w", err)
 	}
 
-	oc, err := client.NewNatsObjectClient(logger, natsClient)
+	oc, err := client.NewNatsObjectClient(ctx, logger, natsClient)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize NATS object client: %w", err)
 	}
 
-	mps, err := client.NewMultiPartStore(logger, natsClient)
+	mps, err := client.NewMultiPartStore(ctx, logger, natsClient, client.MultiPartStoreOptions{
+		Replicas: opts.Replicas,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize multipart store: %w", err)
 	}
@@ -76,15 +89,15 @@ func (s *S3Gateway) RegisterRoutes(router *mux.Router) {
 	r.Methods(http.MethodGet).Path("/").HandlerFunc(s.iam.Auth(s.ListBuckets)) // ListBuckets
 
 	// Bucket root
-	r.Methods(http.MethodPut).Path("/{bucket}").HandlerFunc(s.iam.Auth(s.CreateBucket))       // CreateBucket
-	r.Methods(http.MethodPut).Path("/{bucket}/").HandlerFunc(s.iam.Auth(s.CreateBucket))      // CreateBucket (with trailing slash)
-	r.Methods(http.MethodHead).Path("/{bucket}").HandlerFunc(s.iam.Auth(s.notImplemented))    // HeadBucket
-	r.Methods(http.MethodHead).Path("/{bucket}/").HandlerFunc(s.iam.Auth(s.notImplemented))   // HeadBucket (with trailing slash)
-	r.Methods(http.MethodGet).Path("/{bucket}").HandlerFunc(s.iam.Auth(s.ListObjects))        // ListObjects/ListObjectsV2
-	r.Methods(http.MethodGet).Path("/{bucket}/").HandlerFunc(s.iam.Auth(s.ListObjects))       // ListObjects/ListObjectsV2 (with trailing slash)
-	r.Methods(http.MethodDelete).Path("/{bucket}").HandlerFunc(s.iam.Auth(s.DeleteBucket))    // DeleteBucket
-	r.Methods(http.MethodDelete).Path("/{bucket}/").HandlerFunc(s.iam.Auth(s.DeleteBucket))   // DeleteBucket (with trailing slash)
-	r.Methods(http.MethodOptions).Path("/{bucket}").HandlerFunc(s.iam.Auth(s.notImplemented)) // CORS preflight
+	r.Methods(http.MethodPut).Path("/{bucket}").HandlerFunc(s.iam.Auth(s.CreateBucket))        // CreateBucket
+	r.Methods(http.MethodPut).Path("/{bucket}/").HandlerFunc(s.iam.Auth(s.CreateBucket))       // CreateBucket (with trailing slash)
+	r.Methods(http.MethodHead).Path("/{bucket}").HandlerFunc(s.iam.Auth(s.notImplemented))     // HeadBucket
+	r.Methods(http.MethodHead).Path("/{bucket}/").HandlerFunc(s.iam.Auth(s.notImplemented))    // HeadBucket (with trailing slash)
+	r.Methods(http.MethodGet).Path("/{bucket}").HandlerFunc(s.iam.Auth(s.ListObjects))         // ListObjects/ListObjectsV2
+	r.Methods(http.MethodGet).Path("/{bucket}/").HandlerFunc(s.iam.Auth(s.ListObjects))        // ListObjects/ListObjectsV2 (with trailing slash)
+	r.Methods(http.MethodDelete).Path("/{bucket}").HandlerFunc(s.iam.Auth(s.DeleteBucket))     // DeleteBucket
+	r.Methods(http.MethodDelete).Path("/{bucket}/").HandlerFunc(s.iam.Auth(s.DeleteBucket))    // DeleteBucket (with trailing slash)
+	r.Methods(http.MethodOptions).Path("/{bucket}").HandlerFunc(s.iam.Auth(s.notImplemented))  // CORS preflight
 	r.Methods(http.MethodOptions).Path("/{bucket}/").HandlerFunc(s.iam.Auth(s.notImplemented)) // CORS preflight (with trailing slash)
 	//r.Methods(http.MethodPost).Path("/{bucket}").HandlerFunc(s.iam.Auth(s.notImplemented))    // POST object (HTML form upload)
 

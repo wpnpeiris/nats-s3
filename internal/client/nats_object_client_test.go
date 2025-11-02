@@ -2,12 +2,14 @@ package client
 
 import (
 	"bytes"
-	"github.com/wpnpeiris/nats-s3/internal/logging"
-	"github.com/wpnpeiris/nats-s3/internal/testutil"
+	"context"
 	"testing"
 	"time"
 
 	"github.com/nats-io/nats.go"
+
+	"github.com/wpnpeiris/nats-s3/internal/logging"
+	"github.com/wpnpeiris/nats-s3/internal/testutil"
 )
 
 func TestNatsObjectClient_BasicCRUD(t *testing.T) {
@@ -16,7 +18,7 @@ func TestNatsObjectClient_BasicCRUD(t *testing.T) {
 
 	url := s.ClientURL()
 
-	c := NewClient("object-test")
+	c := NewClient(context.Background(), "object-test")
 	if err := c.SetupConnectionToNATS(url); err != nil {
 		t.Fatalf("connect failed: %v", err)
 	}
@@ -40,7 +42,7 @@ func TestNatsObjectClient_BasicCRUD(t *testing.T) {
 	}
 
 	logger := logging.NewLogger(logging.Config{Level: "debug"})
-	oc, err := NewNatsObjectClient(logger, c)
+	oc, err := NewNatsObjectClient(context.Background(), logger, c)
 	if err != nil {
 		t.Fatalf("NewNatsObjectClient failed: %v", err)
 	}
