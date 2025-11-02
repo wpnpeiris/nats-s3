@@ -40,13 +40,21 @@ func NewS3Gateway(ctx context.Context,
 	natsOptions []nats.Option,
 	credStore credential.Store,
 	opts S3GatewayOptions) (*S3Gateway, error) {
+
+	if opts.Replicas < 1 {
+		logging.Info(logger, "msg", fmt.Sprintf("Invalid replicas count, defaulting to 1: [%d]", opts.Replicas))
+		opts.Replicas = 1
+	}
+
 	natsClient := client.NewClient(ctx, "s3-gateway")
 	err := natsClient.SetupConnectionToNATS(natsServers, natsOptions...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to NATS: %w", err)
 	}
 
-	oc, err := client.NewNatsObjectClient(ctx, logger, natsClient)
+	oc, err := client.NewNatsObjectClient(ctx, logger, natsClient, client.NatsObjectClientOptions{
+		Replicas: opts.Replicas,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize NATS object client: %w", err)
 	}
@@ -58,7 +66,7 @@ func NewS3Gateway(ctx context.Context,
 		return nil, fmt.Errorf("failed to initialize multipart store: %w", err)
 	}
 
-	mc := client.NewMetricCollector(logger, oc)
+	mc := client.NewMetricCollector(ctx, logger, oc)
 	err = metrics.RegisterPrometheusCollector(mc)
 	if err != nil {
 		logging.Error(logger, "msg", "Error at registering metric collector", "err", err)

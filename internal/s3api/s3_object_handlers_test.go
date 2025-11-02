@@ -10,6 +10,7 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/nats-io/nats.go"
+	"github.com/nats-io/nats.go/jetstream"
 
 	"github.com/wpnpeiris/nats-s3/internal/logging"
 	"github.com/wpnpeiris/nats-s3/internal/testutil"
@@ -28,16 +29,19 @@ func TestObjectHandlers_CRUD(t *testing.T) {
 	// Ensure bucket exists
 	natsEndpoint := s.Addr().String()
 	nc, err := nats.Connect(natsEndpoint)
+	if err != nil {
+		t.Fatalf("failed to connect to NATS: %v", err)
+	}
 	// Avoid panic-on-close during tests
 	nc.SetClosedHandler(func(_ *nats.Conn) {})
 	defer nc.Close()
 
-	js, err := nc.JetStream()
+	js, err := jetstream.New(nc)
 	if err != nil {
 		t.Fatalf("JetStream failed: %v", err)
 	}
 	bucket := "tobj"
-	if _, err := js.CreateObjectStore(&nats.ObjectStoreConfig{Bucket: bucket}); err != nil {
+	if _, err := js.CreateObjectStore(context.Background(), jetstream.ObjectStoreConfig{Bucket: bucket}); err != nil {
 		t.Fatalf("create object store failed: %v", err)
 	}
 
@@ -133,15 +137,18 @@ func TestCopyObject_Basic(t *testing.T) {
 	// Setup NATS connection and create bucket
 	natsEndpoint := s.Addr().String()
 	nc, err := nats.Connect(natsEndpoint)
+	if err != nil {
+		t.Fatalf("failed to connect to NATS: %v", err)
+	}
 	nc.SetClosedHandler(func(_ *nats.Conn) {})
 	defer nc.Close()
 
-	js, err := nc.JetStream()
+	js, err := jetstream.New(nc)
 	if err != nil {
 		t.Fatalf("JetStream failed: %v", err)
 	}
 	bucket := "copy-test"
-	if _, err := js.CreateObjectStore(&nats.ObjectStoreConfig{Bucket: bucket}); err != nil {
+	if _, err := js.CreateObjectStore(context.Background(), jetstream.ObjectStoreConfig{Bucket: bucket}); err != nil {
 		t.Fatalf("create object store failed: %v", err)
 	}
 
@@ -232,15 +239,18 @@ func TestCopyObject_ReplaceMetadata(t *testing.T) {
 
 	natsEndpoint := s.Addr().String()
 	nc, err := nats.Connect(natsEndpoint)
+	if err != nil {
+		t.Fatalf("failed to connect to NATS: %v", err)
+	}
 	nc.SetClosedHandler(func(_ *nats.Conn) {})
 	defer nc.Close()
 
-	js, err := nc.JetStream()
+	js, err := jetstream.New(nc)
 	if err != nil {
 		t.Fatalf("JetStream failed: %v", err)
 	}
 	bucket := "copy-replace-test"
-	if _, err := js.CreateObjectStore(&nats.ObjectStoreConfig{Bucket: bucket}); err != nil {
+	if _, err := js.CreateObjectStore(context.Background(), jetstream.ObjectStoreConfig{Bucket: bucket}); err != nil {
 		t.Fatalf("create object store failed: %v", err)
 	}
 
@@ -301,15 +311,18 @@ func TestCopyObject_InvalidSource(t *testing.T) {
 
 	natsEndpoint := s.Addr().String()
 	nc, err := nats.Connect(natsEndpoint)
+	if err != nil {
+		t.Fatalf("failed to connect to NATS: %v", err)
+	}
 	nc.SetClosedHandler(func(_ *nats.Conn) {})
 	defer nc.Close()
 
-	js, err := nc.JetStream()
+	js, err := jetstream.New(nc)
 	if err != nil {
 		t.Fatalf("JetStream failed: %v", err)
 	}
 	bucket := "copy-error-test"
-	if _, err := js.CreateObjectStore(&nats.ObjectStoreConfig{Bucket: bucket}); err != nil {
+	if _, err := js.CreateObjectStore(context.Background(), jetstream.ObjectStoreConfig{Bucket: bucket}); err != nil {
 		t.Fatalf("create object store failed: %v", err)
 	}
 
@@ -348,15 +361,18 @@ func TestListObjects_WithDelimiter(t *testing.T) {
 	// Setup NATS connection and create bucket
 	natsEndpoint := s.Addr().String()
 	nc, err := nats.Connect(natsEndpoint)
+	if err != nil {
+		t.Fatalf("failed to connect to NATS: %v", err)
+	}
 	nc.SetClosedHandler(func(_ *nats.Conn) {})
 	defer nc.Close()
 
-	js, err := nc.JetStream()
+	js, err := jetstream.New(nc)
 	if err != nil {
 		t.Fatalf("JetStream failed: %v", err)
 	}
 	bucket := "test-delimiter"
-	if _, err := js.CreateObjectStore(&nats.ObjectStoreConfig{Bucket: bucket}); err != nil {
+	if _, err := js.CreateObjectStore(context.Background(), jetstream.ObjectStoreConfig{Bucket: bucket}); err != nil {
 		t.Fatalf("create object store failed: %v", err)
 	}
 
@@ -439,16 +455,19 @@ func TestObjectRetention(t *testing.T) {
 	// Create bucket and object
 	natsEndpoint := s.Addr().String()
 	nc, err := nats.Connect(natsEndpoint)
+	if err != nil {
+		t.Fatalf("failed to connect to NATS: %v", err)
+	}
 	nc.SetClosedHandler(func(_ *nats.Conn) {})
 	defer nc.Close()
 
-	js, err := nc.JetStream()
+	js, err := jetstream.New(nc)
 	if err != nil {
 		t.Fatalf("JetStream failed: %v", err)
 	}
 
 	bucket := "retention-test"
-	if _, err := js.CreateObjectStore(&nats.ObjectStoreConfig{Bucket: bucket}); err != nil {
+	if _, err := js.CreateObjectStore(context.Background(), jetstream.ObjectStoreConfig{Bucket: bucket}); err != nil {
 		t.Fatalf("create object store failed: %v", err)
 	}
 
@@ -538,16 +557,19 @@ func TestObjectRetentionOnUpload(t *testing.T) {
 	// Create bucket
 	natsEndpoint := s.Addr().String()
 	nc, err := nats.Connect(natsEndpoint)
+	if err != nil {
+		t.Fatalf("failed to connect to NATS: %v", err)
+	}
 	nc.SetClosedHandler(func(_ *nats.Conn) {})
 	defer nc.Close()
 
-	js, err := nc.JetStream()
+	js, err := jetstream.New(nc)
 	if err != nil {
 		t.Fatalf("JetStream failed: %v", err)
 	}
 
 	bucket := "retention-upload-test"
-	if _, err := js.CreateObjectStore(&nats.ObjectStoreConfig{Bucket: bucket}); err != nil {
+	if _, err := js.CreateObjectStore(context.Background(), jetstream.ObjectStoreConfig{Bucket: bucket}); err != nil {
 		t.Fatalf("create object store failed: %v", err)
 	}
 
@@ -615,15 +637,18 @@ func TestListObjects_WithTrailingSlash(t *testing.T) {
 	// Setup NATS connection and create bucket
 	natsEndpoint := s.Addr().String()
 	nc, err := nats.Connect(natsEndpoint)
+	if err != nil {
+		t.Fatalf("failed to connect to NATS: %v", err)
+	}
 	nc.SetClosedHandler(func(_ *nats.Conn) {})
 	defer nc.Close()
 
-	js, err := nc.JetStream()
+	js, err := jetstream.New(nc)
 	if err != nil {
 		t.Fatalf("JetStream failed: %v", err)
 	}
 	bucket := "test-trailing-slash"
-	if _, err := js.CreateObjectStore(&nats.ObjectStoreConfig{Bucket: bucket}); err != nil {
+	if _, err := js.CreateObjectStore(context.Background(), jetstream.ObjectStoreConfig{Bucket: bucket}); err != nil {
 		t.Fatalf("create object store failed: %v", err)
 	}
 

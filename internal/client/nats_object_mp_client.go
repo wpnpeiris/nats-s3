@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 
 	"github.com/wpnpeiris/nats-s3/internal/logging"
@@ -62,7 +61,7 @@ type MultiPartStore struct {
 
 func NewMultiPartStore(ctx context.Context, logger log.Logger,
 	c *Client, opts MultiPartStoreOptions) (*MultiPartStore, error) {
-	if opts.Replicas <= 0 {
+	if opts.Replicas < 1 {
 		logging.Info(logger, "msg", fmt.Sprintf("Invalid replicas count, defaulting to 1: [%d]", opts.Replicas))
 		opts.Replicas = 1
 	}
@@ -70,7 +69,7 @@ func NewMultiPartStore(ctx context.Context, logger log.Logger,
 	nc := c.NATS()
 	js, err := jetstream.New(nc)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create multipart session store when calling nc.JetStream(): %w", err)
+		return nil, fmt.Errorf("failed to create multipart session store when calling jetstream.New(): %w", err)
 	}
 
 	metaKV, err := js.CreateOrUpdateKeyValue(ctx, jetstream.KeyValueConfig{
@@ -306,7 +305,7 @@ func (m *MultiPartStore) CompleteMultipartUpload(ctx context.Context, bucket str
 	os, err := js.ObjectStore(ctx, bucket)
 	if err != nil {
 		logging.Error(m.logger, "msg", "Error at CompleteMultipartUpload", "err", err)
-		if errors.Is(err, nats.ErrStreamNotFound) {
+		if errors.Is(err, jetstream.ErrBucketNotFound) {
 			return "", ErrBucketNotFound
 		}
 		return "", err
@@ -466,11 +465,6 @@ func (m *MultiPartStore) getAllPartMeta(ctx context.Context, bucket, key, upload
 
 	keys, err := m.partMetaStore.ListKeys(ctx)
 	if err != nil {
-		// ErrNoKeysFound is expected when no parts have been uploaded yet
-		if errors.Is(err, nats.ErrNoKeysFound) {
-			logging.Debug(m.logger, "msg", "No parts found for upload session (empty upload)")
-			return make(map[int]PartMeta), nil
-		}
 		logging.Error(m.logger, "msg", "Error at getAllPartMeta when partMetaStore.Keys()", "err", err)
 		return nil, err
 	}
@@ -500,18 +494,13 @@ func (m *MultiPartStore) deleteAllPartMeta(ctx context.Context, bucket, key, upl
 	logging.Debug(m.logger, "msg", fmt.Sprintf("delete all part meta: bucket=%s key=%s uploadID=%s", bucket, key, uploadID))
 	prefix := partMetaPrefix(bucket, key, uploadID)
 
-	keys, err := m.partMetaStore.Keys(ctx)
+	keys, err := m.partMetaStore.ListKeys(ctx)
 	if err != nil {
-		// ErrNoKeysFound is expected when no parts exist - nothing to delete
-		if errors.Is(err, nats.ErrNoKeysFound) {
-			logging.Debug(m.logger, "msg", "No part metadata to delete (empty upload)")
-			return nil
-		}
 		logging.Error(m.logger, "msg", "Error at deleteAllPartMeta when partMetaStore.Keys()", "err", err)
 		return err
 	}
 
-	for _, kvKey := range keys {
+	for kvKey := range keys.Keys() {
 		if strings.HasPrefix(kvKey, prefix) {
 			err := m.partMetaStore.Delete(ctx, kvKey)
 			if err != nil {

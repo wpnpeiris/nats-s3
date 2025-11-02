@@ -1,9 +1,12 @@
 package client
 
 import (
+	"context"
+
 	"github.com/go-kit/log"
 	"github.com/nats-io/nats.go"
 	"github.com/prometheus/client_golang/prometheus"
+
 	"github.com/wpnpeiris/nats-s3/internal/logging"
 )
 
@@ -14,6 +17,7 @@ const (
 )
 
 type MetricCollector struct {
+	ctx    context.Context
 	logger log.Logger
 	client *NatsObjectClient
 
@@ -27,8 +31,9 @@ type MetricCollector struct {
 	totalReconnectDesc *prometheus.Desc
 }
 
-func NewMetricCollector(logger log.Logger, client *NatsObjectClient) *MetricCollector {
+func NewMetricCollector(ctx context.Context, logger log.Logger, client *NatsObjectClient) *MetricCollector {
 	return &MetricCollector{
+		ctx:    ctx,
 		logger: logger,
 		client: client,
 
@@ -83,7 +88,7 @@ func (c MetricCollector) Collect(ch chan<- prometheus.Metric) {
 // countBuckets return number of buckets
 func (c MetricCollector) countBuckets() float64 {
 	buckets := 0.0
-	ch, err := c.client.ListBuckets()
+	ch, err := c.client.ListBuckets(c.ctx)
 	if err != nil {
 		logging.Warn(c.logger, "msg", "Error at listing buckets for metrics", "err", err)
 	} else {

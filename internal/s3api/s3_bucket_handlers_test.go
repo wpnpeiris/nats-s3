@@ -6,11 +6,12 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/wpnpeiris/nats-s3/internal/logging"
-	"github.com/wpnpeiris/nats-s3/internal/testutil"
-
 	"github.com/gorilla/mux"
 	"github.com/nats-io/nats.go"
+	"github.com/nats-io/nats.go/jetstream"
+
+	"github.com/wpnpeiris/nats-s3/internal/logging"
+	"github.com/wpnpeiris/nats-s3/internal/testutil"
 )
 
 func TestListBuckets(t *testing.T) {
@@ -26,16 +27,19 @@ func TestListBuckets(t *testing.T) {
 	// Create a couple of buckets so ListBuckets has content.
 	natsEndpoint := s.Addr().String()
 	nc, err := nats.Connect(natsEndpoint)
+	if err != nil {
+		t.Fatalf("failed to connect to NATS: %v", err)
+	}
 	// Avoid production panic handler during test shutdown.
 	nc.SetClosedHandler(func(_ *nats.Conn) {})
 	defer nc.Close()
 
-	js, err := nc.JetStream()
+	js, err := jetstream.New(nc)
 	if err != nil {
 		t.Fatalf("JetStream failed: %v", err)
 	}
 	for _, b := range []string{"bucket1", "bucket2"} {
-		if _, err := js.CreateObjectStore(&nats.ObjectStoreConfig{Bucket: b}); err != nil {
+		if _, err := js.CreateObjectStore(context.Background(), jetstream.ObjectStoreConfig{Bucket: b}); err != nil {
 			t.Fatalf("create object store %s failed: %v", b, err)
 		}
 	}
@@ -97,13 +101,16 @@ func TestCreateBucket(t *testing.T) {
 	// Verify bucket exists in NATS by opening ObjectStore
 	natsEndpoint := s.Addr().String()
 	nc, err := nats.Connect(natsEndpoint)
+	if err != nil {
+		t.Fatalf("failed to connect to NATS: %v", err)
+	}
 	nc.SetClosedHandler(func(_ *nats.Conn) {})
 	defer nc.Close()
-	js, err := nc.JetStream()
+	js, err := jetstream.New(nc)
 	if err != nil {
 		t.Fatalf("JetStream failed: %v", err)
 	}
-	if _, err := js.ObjectStore(bucket); err != nil {
+	if _, err := js.ObjectStore(context.Background(), bucket); err != nil {
 		t.Fatalf("expected created object store %q, got error: %v", bucket, err)
 	}
 }

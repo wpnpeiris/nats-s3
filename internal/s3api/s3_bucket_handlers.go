@@ -25,7 +25,7 @@ type BucketsResult struct {
 // bucket and returning a minimal S3-compatible XML response.
 func (s *S3Gateway) CreateBucket(w http.ResponseWriter, r *http.Request) {
 	bucket := mux.Vars(r)["bucket"]
-	os, err := s.client.CreateBucket(bucket)
+	os, err := s.client.CreateBucket(r.Context(), bucket)
 	if err != nil {
 		if errors.Is(err, client.ErrBucketAlreadyExists) {
 			model.WriteErrorResponse(w, r, model.ErrBucketAlreadyOwnedByYou)
@@ -54,7 +54,7 @@ func (s *S3Gateway) DeleteBucket(w http.ResponseWriter, r *http.Request) {
 	bucket := mux.Vars(r)["bucket"]
 
 	// Check if bucket is empty before attempting deletion
-	objects, err := s.client.ListObjects(bucket)
+	objects, err := s.client.ListObjects(r.Context(), bucket)
 	if err != nil {
 		if errors.Is(err, client.ErrBucketNotFound) {
 			model.WriteErrorResponse(w, r, model.ErrNoSuchBucket)
@@ -72,7 +72,7 @@ func (s *S3Gateway) DeleteBucket(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Bucket is empty, proceed with deletion
-	err = s.client.DeleteBucket(bucket)
+	err = s.client.DeleteBucket(r.Context(), bucket)
 	if err != nil {
 		if errors.Is(err, client.ErrBucketNotFound) {
 			model.WriteErrorResponse(w, r, model.ErrNoSuchBucket)
@@ -88,7 +88,7 @@ func (s *S3Gateway) DeleteBucket(w http.ResponseWriter, r *http.Request) {
 // ListBuckets enumerates existing JetStream Object Store buckets and returns
 // a simple S3-compatible XML response.
 func (s *S3Gateway) ListBuckets(w http.ResponseWriter, r *http.Request) {
-	entries, err := s.client.ListBuckets()
+	entries, err := s.client.ListBuckets(r.Context())
 	if err != nil {
 		model.WriteErrorResponse(w, r, model.ErrInternalError)
 		return

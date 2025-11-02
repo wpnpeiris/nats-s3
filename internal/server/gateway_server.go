@@ -42,6 +42,11 @@ func NewGatewayServer(ctx context.Context,
 	natsOptions []nats.Option,
 	credStore credential.Store,
 	opts GatewayServerOptions) (*GatewayServer, error) {
+	if opts.NATSReplicas < 1 {
+		logging.Info(logger, "msg", fmt.Sprintf("Invalid NATS replicas count, defaulting to 1: [%d]", opts.NATSReplicas))
+		opts.NATSReplicas = 1
+	}
+
 	s3Gateway, err := s3api.NewS3Gateway(ctx, logger, natsServers, natsOptions, credStore, s3api.S3GatewayOptions{
 		Replicas: opts.NATSReplicas,
 	})
