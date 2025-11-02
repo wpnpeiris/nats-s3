@@ -77,10 +77,15 @@ func (s *S3Gateway) RegisterRoutes(router *mux.Router) {
 
 	// Bucket root
 	r.Methods(http.MethodPut).Path("/{bucket}").HandlerFunc(s.iam.Auth(s.CreateBucket))       // CreateBucket
+	r.Methods(http.MethodPut).Path("/{bucket}/").HandlerFunc(s.iam.Auth(s.CreateBucket))      // CreateBucket (with trailing slash)
 	r.Methods(http.MethodHead).Path("/{bucket}").HandlerFunc(s.iam.Auth(s.notImplemented))    // HeadBucket
+	r.Methods(http.MethodHead).Path("/{bucket}/").HandlerFunc(s.iam.Auth(s.notImplemented))   // HeadBucket (with trailing slash)
 	r.Methods(http.MethodGet).Path("/{bucket}").HandlerFunc(s.iam.Auth(s.ListObjects))        // ListObjects/ListObjectsV2
+	r.Methods(http.MethodGet).Path("/{bucket}/").HandlerFunc(s.iam.Auth(s.ListObjects))       // ListObjects/ListObjectsV2 (with trailing slash)
 	r.Methods(http.MethodDelete).Path("/{bucket}").HandlerFunc(s.iam.Auth(s.DeleteBucket))    // DeleteBucket
+	r.Methods(http.MethodDelete).Path("/{bucket}/").HandlerFunc(s.iam.Auth(s.DeleteBucket))   // DeleteBucket (with trailing slash)
 	r.Methods(http.MethodOptions).Path("/{bucket}").HandlerFunc(s.iam.Auth(s.notImplemented)) // CORS preflight
+	r.Methods(http.MethodOptions).Path("/{bucket}/").HandlerFunc(s.iam.Auth(s.notImplemented)) // CORS preflight (with trailing slash)
 	//r.Methods(http.MethodPost).Path("/{bucket}").HandlerFunc(s.iam.Auth(s.notImplemented))    // POST object (HTML form upload)
 
 	// Bucket sub-resources (Queries matchers)
@@ -184,8 +189,10 @@ type gatewayStats struct {
 
 // addBucketSubresource registers a bucket-level subresource path using a
 // query-string flag like ?acl= or ?cors= to disambiguate behavior.
+// Registers both with and without trailing slash.
 func addBucketSubresource(r *mux.Router, method, sub string, h http.HandlerFunc) {
 	r.Methods(method).Path("/{bucket}").Queries(sub, "").HandlerFunc(h)
+	r.Methods(method).Path("/{bucket}/").Queries(sub, "").HandlerFunc(h)
 }
 
 // addObjectSubresource registers an object-level subresource path using a

@@ -216,6 +216,12 @@ func (s *S3Gateway) Download(w http.ResponseWriter, r *http.Request) {
 	bucket := mux.Vars(r)["bucket"]
 	key := mux.Vars(r)["key"]
 
+	// If key is empty, return error
+	if key == "" {
+		model.WriteErrorResponse(w, r, model.ErrInvalidRequest)
+		return
+	}
+
 	info, data, err := s.client.GetObject(bucket, key)
 	if err != nil {
 		if errors.Is(err, client.ErrBucketNotFound) {
