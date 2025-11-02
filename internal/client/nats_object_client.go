@@ -66,15 +66,10 @@ func (c *NatsObjectClient) Stats() nats.Statistics {
 // CreateBucket creates a JetStream Object Store bucket.
 func (c *NatsObjectClient) CreateBucket(ctx context.Context, bucketName string) (jetstream.ObjectStoreStatus, error) {
 	logging.Info(c.logger, "msg", fmt.Sprintf("Create bucket: %s", bucketName))
-	nc := c.client.NATS()
-	js, err := jetstream.New(nc)
-	if err != nil {
-		logging.Error(c.logger, "msg", "Error at CreateBucket when jetstream.New()", "err", err)
-		return nil, err
-	}
+	js := c.client.JetStream()
 
 	// Check if bucket already exists to fail duplicate creation explicitly
-	_, err = js.ObjectStore(ctx, bucketName)
+	_, err := js.ObjectStore(ctx, bucketName)
 	if err == nil {
 		logging.Info(c.logger, "msg", fmt.Sprintf("Bucket already exists: %s", bucketName))
 		return nil, ErrBucketAlreadyExists
@@ -99,13 +94,8 @@ func (c *NatsObjectClient) CreateBucket(ctx context.Context, bucketName string) 
 // DeleteBucket deletes a bucket identified by its name.
 func (c *NatsObjectClient) DeleteBucket(ctx context.Context, bucket string) error {
 	logging.Info(c.logger, "msg", fmt.Sprintf("Delete bucket: %s", bucket))
-	nc := c.client.NATS()
-	js, err := jetstream.New(nc)
-	if err != nil {
-		logging.Error(c.logger, "msg", "Error at DeleteBucket", "err", err)
-		return err
-	}
-	err = js.DeleteObjectStore(ctx, bucket)
+	js := c.client.JetStream()
+	err := js.DeleteObjectStore(ctx, bucket)
 	if err != nil {
 		logging.Error(c.logger, "msg", "Error at DeleteBucket", "err", err)
 		if errors.Is(err, jetstream.ErrBucketNotFound) {
@@ -119,12 +109,7 @@ func (c *NatsObjectClient) DeleteBucket(ctx context.Context, bucket string) erro
 // DeleteObject removes an object identified by bucket and key.
 func (c *NatsObjectClient) DeleteObject(ctx context.Context, bucket string, key string) error {
 	logging.Info(c.logger, "msg", fmt.Sprintf("Delete object on bucket: [%s/%s]", bucket, key))
-	nc := c.client.NATS()
-	js, err := jetstream.New(nc)
-	if err != nil {
-		logging.Error(c.logger, "msg", "Error at DeleteObject", "err", err)
-		return err
-	}
+	js := c.client.JetStream()
 	os, err := js.ObjectStore(ctx, bucket)
 	if err != nil {
 		logging.Error(c.logger, "msg", "Error at DeleteObject", "err", err)
@@ -148,12 +133,7 @@ func (c *NatsObjectClient) DeleteObject(ctx context.Context, bucket string, key 
 // GetObjectInfo fetches metadata for an object.
 func (c *NatsObjectClient) GetObjectInfo(ctx context.Context, bucket string, key string) (*jetstream.ObjectInfo, error) {
 	logging.Info(c.logger, "msg", fmt.Sprintf("Get object info: [%s/%s]", bucket, key))
-	nc := c.client.NATS()
-	js, err := jetstream.New(nc)
-	if err != nil {
-		logging.Error(c.logger, "msg", "Error at GetObjectInfo", "err", err)
-		return nil, err
-	}
+	js := c.client.JetStream()
 	os, err := js.ObjectStore(ctx, bucket)
 	if err != nil {
 		logging.Error(c.logger, "msg", "Error at GetObjectInfo", "err", err)
@@ -177,12 +157,7 @@ func (c *NatsObjectClient) GetObjectInfo(ctx context.Context, bucket string, key
 // GetObject retrieves an object's metadata and bytes.
 func (c *NatsObjectClient) GetObject(ctx context.Context, bucket string, key string) (*jetstream.ObjectInfo, []byte, error) {
 	logging.Info(c.logger, "msg", fmt.Sprintf("Get object : [%s/%s]", bucket, key))
-	nc := c.client.NATS()
-	js, err := jetstream.New(nc)
-	if err != nil {
-		logging.Error(c.logger, "msg", "Error at GetObject", "err", err)
-		return nil, nil, err
-	}
+	js := c.client.JetStream()
 	os, err := js.ObjectStore(ctx, bucket)
 	if err != nil {
 		logging.Error(c.logger, "msg", "Error at GetObject", "err", err)
@@ -210,24 +185,14 @@ func (c *NatsObjectClient) GetObject(ctx context.Context, bucket string, key str
 // ListBuckets returns a channel of object store statuses for all buckets.
 func (c *NatsObjectClient) ListBuckets(ctx context.Context) (<-chan jetstream.ObjectStoreStatus, error) {
 	logging.Info(c.logger, "msg", "List buckets")
-	nc := c.client.NATS()
-	js, err := jetstream.New(nc)
-	if err != nil {
-		logging.Error(c.logger, "msg", "Error at ListBuckets", "err", err)
-		return nil, err
-	}
+	js := c.client.JetStream()
 	return js.ObjectStores(ctx).Status(), nil
 }
 
 // ListObjects lists all objects in the given bucket.
 func (c *NatsObjectClient) ListObjects(ctx context.Context, bucket string) ([]*jetstream.ObjectInfo, error) {
 	logging.Info(c.logger, "msg", fmt.Sprintf("List objects: [%s]", bucket))
-	nc := c.client.NATS()
-	js, err := jetstream.New(nc)
-	if err != nil {
-		logging.Error(c.logger, "msg", "Error at ListObjects", "err", err)
-		return nil, err
-	}
+	js := c.client.JetStream()
 	os, err := js.ObjectStore(ctx, bucket)
 	if err != nil {
 		logging.Error(c.logger, "msg", "Error at ListObjects", "err", err)
@@ -254,12 +219,7 @@ func (c *NatsObjectClient) PutObject(ctx context.Context, bucket string,
 	metadata map[string]string,
 	data []byte) (*jetstream.ObjectInfo, error) {
 	logging.Info(c.logger, "msg", fmt.Sprintf("Pub object: [%s/%s]", bucket, key))
-	nc := c.client.NATS()
-	js, err := jetstream.New(nc)
-	if err != nil {
-		logging.Error(c.logger, "msg", "Error at PutObject", "err", err)
-		return nil, err
-	}
+	js := c.client.JetStream()
 	os, err := js.ObjectStore(ctx, bucket)
 	if err != nil {
 		logging.Error(c.logger, "msg", "Error at PutObject", "err", err)
@@ -283,12 +243,7 @@ func (c *NatsObjectClient) PutObject(ctx context.Context, bucket string,
 // GetObjectRetention retrieves retention metadata for an object
 func (c *NatsObjectClient) GetObjectRetention(ctx context.Context, bucket string, key string) (mode string, retainUntilDate string, err error) {
 	logging.Info(c.logger, "msg", fmt.Sprintf("Get object retention: %s/%s", bucket, key))
-	nc := c.client.NATS()
-	js, err := jetstream.New(nc)
-	if err != nil {
-		logging.Error(c.logger, "msg", "Error at GetObjectRetention when jetstream.New()", "err", err)
-		return "", "", err
-	}
+	js := c.client.JetStream()
 	os, err := js.ObjectStore(ctx, bucket)
 	if err != nil {
 		logging.Error(c.logger, "msg", "Error at GetObjectRetention", "err", err)
@@ -322,12 +277,7 @@ func (c *NatsObjectClient) GetObjectRetention(ctx context.Context, bucket string
 // PutObjectRetention sets retention metadata for an existing object
 func (c *NatsObjectClient) PutObjectRetention(ctx context.Context, bucket string, key string, mode string, retainUntilDate string) error {
 	logging.Info(c.logger, "msg", fmt.Sprintf("Put object retention: %s/%s mode=%s until=%s", bucket, key, mode, retainUntilDate))
-	nc := c.client.NATS()
-	js, err := jetstream.New(nc)
-	if err != nil {
-		logging.Error(c.logger, "msg", "Error at PutObjectRetention when jetstream.New()", "err", err)
-		return err
-	}
+	js := c.client.JetStream()
 	os, err := js.ObjectStore(ctx, bucket)
 	if err != nil {
 		logging.Error(c.logger, "msg", "Error at PutObjectRetention", "err", err)

@@ -6,6 +6,7 @@ import (
 	"log"
 
 	"github.com/nats-io/nats.go"
+	"github.com/nats-io/nats.go/jetstream"
 	"github.com/nats-io/nuid"
 )
 
@@ -21,6 +22,7 @@ type Client struct {
 	id   string
 	kind string
 	nc   *nats.Conn
+	js   jetstream.JetStream
 }
 
 // NewClient creates a new Client with a generated ID and the provided kind
@@ -56,12 +58,26 @@ func (c *Client) SetupConnectionToNATS(servers string, options ...nats.Option) e
 		log.Fatal("Connection to NATS is closed! Service cannot continue.")
 	})
 
-	return err
+	// Initialize JetStream on the connection & store it for future use.
+	c.js, err = jetstream.New(nc,
+		jetstream.WithPublishAsyncErrHandler(func(js jetstream.JetStream, m *nats.Msg, err error) {
+			log.Printf("Could not publish message %s: %v\n", m.Subject, err)
+		}))
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // NATS returns the underlying NATS connection.
 func (c *Client) NATS() *nats.Conn {
 	return c.nc
+}
+
+// JetStream returns the underlying JetStream connection.
+func (c *Client) JetStream() jetstream.JetStream {
+	return c.js
 }
 
 // ID returns the client's stable unique identifier.

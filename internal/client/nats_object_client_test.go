@@ -28,10 +28,7 @@ func TestNatsObjectClient_BasicCRUD(t *testing.T) {
 	nc.SetClosedHandler(func(_ *nats.Conn) {})
 	defer nc.Close()
 
-	js, err := jetstream.New(nc)
-	if err != nil {
-		t.Fatalf("JetStream failed: %v", err)
-	}
+	js := c.JetStream()
 
 	bucket := "testbucket"
 	key := "path/to/object.txt"

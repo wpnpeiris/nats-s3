@@ -65,12 +65,7 @@ func NewMultiPartStore(ctx context.Context, logger log.Logger,
 		logging.Info(logger, "msg", fmt.Sprintf("Invalid replicas count, defaulting to 1: [%d]", opts.Replicas))
 		opts.Replicas = 1
 	}
-
-	nc := c.NATS()
-	js, err := jetstream.New(nc)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create multipart session store when calling jetstream.New(): %w", err)
-	}
+	js := c.JetStream()
 
 	metaKV, err := js.CreateOrUpdateKeyValue(ctx, jetstream.KeyValueConfig{
 		Bucket:   MetaStoreName,
@@ -295,13 +290,7 @@ func (m *MultiPartStore) CompleteMultipartUpload(ctx context.Context, bucket str
 			_ = pr.Close()
 		}
 	}()
-
-	nc := m.client.NATS()
-	js, err := jetstream.New(nc)
-	if err != nil {
-		logging.Error(m.logger, "msg", "Error at CompleteMultipartUpload", "err", err)
-		return "", err
-	}
+	js := m.client.JetStream()
 	os, err := js.ObjectStore(ctx, bucket)
 	if err != nil {
 		logging.Error(m.logger, "msg", "Error at CompleteMultipartUpload", "err", err)
