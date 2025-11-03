@@ -149,8 +149,8 @@ func (s *S3Gateway) RegisterRoutes(router *mux.Router) {
 	addBucketSubresource(bucket, http.MethodDelete, "ownershipControls", s.iam.Auth(s.notImplemented))
 	addBucketSubresource(bucket, http.MethodGet, "accelerate", s.iam.Auth(s.notImplemented))
 	addBucketSubresource(bucket, http.MethodPut, "accelerate", s.iam.Auth(s.notImplemented))
-	addBucketSubresource(bucket, http.MethodGet, "location", s.iam.Auth(s.notImplemented))
-	addBucketSubresource(bucket, http.MethodGet, "uploads", s.iam.Auth(s.notImplemented)) // List multipart uploads
+	addBucketSubresource(bucket, http.MethodGet, "location", s.iam.Auth(s.GetBucketLocation))
+	addBucketSubresource(bucket, http.MethodGet, "uploads", s.iam.Auth(s.notImplemented))
 	addBucketSubresource(bucket, http.MethodGet, "versions", s.iam.Auth(s.notImplemented))
 	addBucketSubresource(bucket, http.MethodGet, "requestPayment", s.iam.Auth(s.notImplemented))
 	addBucketSubresource(bucket, http.MethodPut, "requestPayment", s.iam.Auth(s.notImplemented))
