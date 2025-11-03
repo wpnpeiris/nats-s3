@@ -23,6 +23,7 @@ type S3Gateway struct {
 	client         *client.NatsObjectClient
 	multiPartStore *client.MultiPartStore
 	iam            *auth.IdentityAccessManagement
+	logger         log.Logger
 	started        time.Time
 }
 
@@ -55,6 +56,7 @@ func NewS3Gateway(logger log.Logger, natsServers string, natsOptions []nats.Opti
 		client:         oc,
 		multiPartStore: mps,
 		iam:            auth.NewIdentityAccessManagement(credStore),
+		logger:         logger,
 		started:        time.Now().UTC(),
 	}, nil
 }
@@ -179,7 +181,12 @@ func (s *S3Gateway) RegisterRoutes(router *mux.Router) {
 
 }
 
-func (s *S3Gateway) notImplemented(w http.ResponseWriter, _ *http.Request) {
+func (s *S3Gateway) notImplemented(w http.ResponseWriter, r *http.Request) {
+	endpoint := fmt.Sprintf("%s %s", r.Method, r.URL.Path)
+	if r.URL.RawQuery != "" {
+		endpoint = fmt.Sprintf("%s?%s", endpoint, r.URL.RawQuery)
+	}
+	logging.Info(s.logger, "msg", "Unimplemented endpoint", "endpoint", endpoint)
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
