@@ -146,3 +146,58 @@ func TestCreateBucketDuplicateFails(t *testing.T) {
 		t.Fatalf("expected 409 on duplicate create, got %d body=%s", rr2.Code, rr2.Body.String())
 	}
 }
+
+func TestCreateBucket_Replicated(t *testing.T) {
+	servers := testutil.StartJSServerCluster(t)
+	for _, s := range servers {
+		defer s.Shutdown()
+	}
+	s := servers[0]
+
+	logger := logging.NewLogger(logging.Config{Level: "debug"})
+	gw, err := NewS3Gateway(context.Background(), logger, s.ClientURL(), nil, nil, S3GatewayOptions{
+		Replicas: 3,
+	})
+	if err != nil {
+		t.Fatalf("failed to create S3 gateway: %v", err)
+	}
+
+	r := mux.NewRouter()
+	gw.RegisterRoutes(r)
+
+	bucket := "created-bucket"
+	req := httptest.NewRequest("PUT", "/"+bucket, nil)
+	rr := httptest.NewRecorder()
+	r.ServeHTTP(rr, req)
+
+	if rr.Code != 200 {
+		t.Fatalf("unexpected status: got %d body=%s", rr.Code, rr.Body.String())
+	}
+
+	// Verify bucket exists in NATS by opening ObjectStore
+	natsEndpoint := s.Addr().String()
+	nc, err := nats.Connect(natsEndpoint)
+	if err != nil {
+		t.Fatalf("failed to connect to NATS: %v", err)
+	}
+	nc.SetClosedHandler(func(_ *nats.Conn) {})
+	defer nc.Close()
+	js, err := jetstream.New(nc)
+	if err != nil {
+		t.Fatalf("JetStream failed: %v", err)
+	}
+
+	objStore, err := js.ObjectStore(context.Background(), bucket)
+	if err != nil {
+		t.Fatalf("expected created object store %q, got error: %v", bucket, err)
+	}
+
+	objStoreStatus, err := objStore.Status(context.Background())
+	if err != nil {
+		t.Fatalf("failed to get object store status: %v", err)
+	}
+
+	if objStoreStatus.Replicas() != 3 {
+		t.Errorf("Expected 3 replicas, got %d", objStoreStatus.Replicas())
+	}
+}
