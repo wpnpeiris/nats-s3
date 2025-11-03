@@ -73,106 +73,110 @@ func (s *S3Gateway) RegisterRoutes(router *mux.Router) {
 	r.Methods(http.MethodOptions).HandlerFunc(s.iam.Auth(s.SetOptionHeaders))
 
 	// Service level
-	r.Methods(http.MethodGet).Path("/").HandlerFunc(s.iam.Auth(s.ListBuckets)) // ListBuckets
+	r.Methods(http.MethodGet).Path("/").HandlerFunc(s.iam.Auth(s.ListBuckets))
 
-	// Bucket root
-	r.Methods(http.MethodPut).Path("/{bucket}").HandlerFunc(s.iam.Auth(s.CreateBucket))       // CreateBucket
-	r.Methods(http.MethodPut).Path("/{bucket}/").HandlerFunc(s.iam.Auth(s.CreateBucket))      // CreateBucket (with trailing slash)
-	r.Methods(http.MethodHead).Path("/{bucket}").HandlerFunc(s.iam.Auth(s.notImplemented))    // HeadBucket
-	r.Methods(http.MethodHead).Path("/{bucket}/").HandlerFunc(s.iam.Auth(s.notImplemented))   // HeadBucket (with trailing slash)
-	r.Methods(http.MethodGet).Path("/{bucket}").HandlerFunc(s.iam.Auth(s.ListObjects))        // ListObjects/ListObjectsV2
-	r.Methods(http.MethodGet).Path("/{bucket}/").HandlerFunc(s.iam.Auth(s.ListObjects))       // ListObjects/ListObjectsV2 (with trailing slash)
-	r.Methods(http.MethodDelete).Path("/{bucket}").HandlerFunc(s.iam.Auth(s.DeleteBucket))    // DeleteBucket
-	r.Methods(http.MethodDelete).Path("/{bucket}/").HandlerFunc(s.iam.Auth(s.DeleteBucket))   // DeleteBucket (with trailing slash)
-	r.Methods(http.MethodOptions).Path("/{bucket}").HandlerFunc(s.iam.Auth(s.notImplemented)) // CORS preflight
-	r.Methods(http.MethodOptions).Path("/{bucket}/").HandlerFunc(s.iam.Auth(s.notImplemented)) // CORS preflight (with trailing slash)
-	//r.Methods(http.MethodPost).Path("/{bucket}").HandlerFunc(s.iam.Auth(s.notImplemented))    // POST object (HTML form upload)
+	// Routes relative to /{bucket}
+	bucket := r.PathPrefix("/{bucket}").Subrouter()
 
-	// Bucket sub-resources (Queries matchers)
-	// Common GET/PUT/DELETE controls
-	addBucketSubresource(r, http.MethodGet, "acl", s.iam.Auth(s.notImplemented))
-	addBucketSubresource(r, http.MethodPut, "acl", s.iam.Auth(s.notImplemented))
-	addBucketSubresource(r, http.MethodGet, "cors", s.iam.Auth(s.notImplemented))
-	addBucketSubresource(r, http.MethodPut, "cors", s.iam.Auth(s.notImplemented))
-	addBucketSubresource(r, http.MethodDelete, "cors", s.iam.Auth(s.notImplemented))
-	addBucketSubresource(r, http.MethodGet, "lifecycle", s.iam.Auth(s.notImplemented))
-	addBucketSubresource(r, http.MethodPut, "lifecycle", s.iam.Auth(s.notImplemented))
-	addBucketSubresource(r, http.MethodDelete, "lifecycle", s.iam.Auth(s.notImplemented))
-	addBucketSubresource(r, http.MethodGet, "policy", s.iam.Auth(s.notImplemented))
-	addBucketSubresource(r, http.MethodPut, "policy", s.iam.Auth(s.notImplemented))
-	addBucketSubresource(r, http.MethodDelete, "policy", s.iam.Auth(s.notImplemented))
-	addBucketSubresource(r, http.MethodGet, "replication", s.iam.Auth(s.notImplemented))
-	addBucketSubresource(r, http.MethodPut, "replication", s.iam.Auth(s.notImplemented))
-	addBucketSubresource(r, http.MethodGet, "versioning", s.iam.Auth(s.notImplemented))
-	addBucketSubresource(r, http.MethodPut, "versioning", s.iam.Auth(s.notImplemented))
-	addBucketSubresource(r, http.MethodGet, "website", s.iam.Auth(s.notImplemented))
-	addBucketSubresource(r, http.MethodPut, "website", s.iam.Auth(s.notImplemented))
-	addBucketSubresource(r, http.MethodDelete, "website", s.iam.Auth(s.notImplemented))
-	addBucketSubresource(r, http.MethodGet, "tagging", s.iam.Auth(s.notImplemented))
-	addBucketSubresource(r, http.MethodPut, "tagging", s.iam.Auth(s.notImplemented))
-	addBucketSubresource(r, http.MethodDelete, "tagging", s.iam.Auth(s.notImplemented))
-	addBucketSubresource(r, http.MethodGet, "logging", s.iam.Auth(s.notImplemented))
-	addBucketSubresource(r, http.MethodPut, "logging", s.iam.Auth(s.notImplemented))
-	addBucketSubresource(r, http.MethodGet, "notification", s.iam.Auth(s.notImplemented))
-	addBucketSubresource(r, http.MethodPut, "notification", s.iam.Auth(s.notImplemented))
-	addBucketSubresource(r, http.MethodGet, "encryption", s.iam.Auth(s.notImplemented))
-	addBucketSubresource(r, http.MethodPut, "encryption", s.iam.Auth(s.notImplemented))
-	addBucketSubresource(r, http.MethodDelete, "encryption", s.iam.Auth(s.notImplemented))
-	addBucketSubresource(r, http.MethodGet, "object-lock", s.iam.Auth(s.notImplemented))
-	addBucketSubresource(r, http.MethodPut, "object-lock", s.iam.Auth(s.notImplemented))
-	addBucketSubresource(r, http.MethodGet, "ownershipControls", s.iam.Auth(s.notImplemented))
-	addBucketSubresource(r, http.MethodPut, "ownershipControls", s.iam.Auth(s.notImplemented))
-	addBucketSubresource(r, http.MethodDelete, "ownershipControls", s.iam.Auth(s.notImplemented))
-	addBucketSubresource(r, http.MethodGet, "accelerate", s.iam.Auth(s.notImplemented))
-	addBucketSubresource(r, http.MethodPut, "accelerate", s.iam.Auth(s.notImplemented))
-	addBucketSubresource(r, http.MethodGet, "location", s.iam.Auth(s.notImplemented))
-	addBucketSubresource(r, http.MethodGet, "uploads", s.iam.Auth(s.notImplemented)) // List multipart uploads
-	addBucketSubresource(r, http.MethodGet, "versions", s.iam.Auth(s.notImplemented))
-	addBucketSubresource(r, http.MethodGet, "requestPayment", s.iam.Auth(s.notImplemented))
-	addBucketSubresource(r, http.MethodPut, "requestPayment", s.iam.Auth(s.notImplemented))
-	addBucketSubresource(r, http.MethodGet, "inventory", s.iam.Auth(s.notImplemented))
-	addBucketSubresource(r, http.MethodPut, "inventory", s.iam.Auth(s.notImplemented))
-	addBucketSubresource(r, http.MethodDelete, "inventory", s.iam.Auth(s.notImplemented))
-	addBucketSubresource(r, http.MethodGet, "metrics", s.iam.Auth(s.notImplemented))
-	addBucketSubresource(r, http.MethodPut, "metrics", s.iam.Auth(s.notImplemented))
-	addBucketSubresource(r, http.MethodDelete, "metrics", s.iam.Auth(s.notImplemented))
-	addBucketSubresource(r, http.MethodGet, "analytics", s.iam.Auth(s.notImplemented))
-	addBucketSubresource(r, http.MethodPut, "analytics", s.iam.Auth(s.notImplemented))
-	addBucketSubresource(r, http.MethodDelete, "analytics", s.iam.Auth(s.notImplemented))
-	addBucketSubresource(r, http.MethodGet, "intelligent-tiering", s.iam.Auth(s.notImplemented))
-	addBucketSubresource(r, http.MethodPut, "intelligent-tiering", s.iam.Auth(s.notImplemented))
-	addBucketSubresource(r, http.MethodDelete, "intelligent-tiering", s.iam.Auth(s.notImplemented))
-	addBucketSubresource(r, http.MethodPost, "delete", s.iam.Auth(s.DeleteObjects)) // Multi-object delete
+	// 1: Object operations with query parameters
+	// These routes have both .Path("/{key:.+}") AND .Queries()
 
-	// Object sub-resources
-	addObjectSubresource(r, http.MethodGet, "acl", s.iam.Auth(s.notImplemented))
-	addObjectSubresource(r, http.MethodPut, "acl", s.iam.Auth(s.notImplemented))
-	addObjectSubresource(r, http.MethodDelete, "acl", s.iam.Auth(s.notImplemented))
-	addObjectSubresource(r, http.MethodGet, "tagging", s.iam.Auth(s.notImplemented))
-	addObjectSubresource(r, http.MethodPut, "tagging", s.iam.Auth(s.notImplemented))
-	addObjectSubresource(r, http.MethodDelete, "tagging", s.iam.Auth(s.notImplemented))
-	addObjectSubresource(r, http.MethodGet, "torrent", s.iam.Auth(s.notImplemented)) // deprecated
-	addObjectSubresource(r, http.MethodPost, "restore", s.iam.Auth(s.notImplemented))
-	addObjectSubresource(r, http.MethodGet, "legal-hold", s.iam.Auth(s.notImplemented))
-	addObjectSubresource(r, http.MethodPut, "legal-hold", s.iam.Auth(s.notImplemented))
-	addObjectSubresource(r, http.MethodGet, "retention", s.iam.Auth(s.GetObjectRetention))
-	addObjectSubresource(r, http.MethodPut, "retention", s.iam.Auth(s.UpdateObjectRetention))
+	// Multipart upload operations
+	addObjectSubresource(bucket, http.MethodPost, "uploads", s.iam.Auth(s.InitiateMultipartUpload))
+	bucket.Methods(http.MethodPut).Path("/{key:.+}").Queries("uploadId", "{uploadId}").HandlerFunc(s.iam.Auth(s.UploadPart))
+	bucket.Methods(http.MethodGet).Path("/{key:.+}").Queries("uploadId", "{uploadId}").HandlerFunc(s.iam.Auth(s.ListParts))
+	bucket.Methods(http.MethodPost).Path("/{key:.+}").Queries("uploadId", "{uploadId}").HandlerFunc(s.iam.Auth(s.CompleteMultipartUpload))
+	bucket.Methods(http.MethodDelete).Path("/{key:.+}").Queries("uploadId", "{uploadId}").HandlerFunc(s.iam.Auth(s.AbortMultipartUpload))
 
-	// Multipart upload operations on object
-	addObjectSubresource(r, http.MethodPost, "uploads", s.iam.Auth(s.InitiateMultipartUpload)) // Initiate multipart upload
-	// Upload part, Get part, Complete, Abort (all matched by uploadId presence)
-	r.Methods(http.MethodPut).Path("/{bucket}/{key:.*}").Queries("uploadId", "{uploadId}").HandlerFunc(s.iam.Auth(s.UploadPart))               // UploadPart
-	r.Methods(http.MethodGet).Path("/{bucket}/{key:.*}").Queries("uploadId", "{uploadId}").HandlerFunc(s.iam.Auth(s.ListParts))                // GetObject (by part?) / List parts
-	r.Methods(http.MethodPost).Path("/{bucket}/{key:.*}").Queries("uploadId", "{uploadId}").HandlerFunc(s.iam.Auth(s.CompleteMultipartUpload)) // CompleteMultipartUpload
-	r.Methods(http.MethodDelete).Path("/{bucket}/{key:.*}").Queries("uploadId", "{uploadId}").HandlerFunc(s.iam.Auth(s.AbortMultipartUpload))  // AbortMultipartUpload
+	// Object subresources
+	addObjectSubresource(bucket, http.MethodGet, "acl", s.iam.Auth(s.notImplemented))
+	addObjectSubresource(bucket, http.MethodPut, "acl", s.iam.Auth(s.notImplemented))
+	addObjectSubresource(bucket, http.MethodDelete, "acl", s.iam.Auth(s.notImplemented))
+	addObjectSubresource(bucket, http.MethodGet, "tagging", s.iam.Auth(s.notImplemented))
+	addObjectSubresource(bucket, http.MethodPut, "tagging", s.iam.Auth(s.notImplemented))
+	addObjectSubresource(bucket, http.MethodDelete, "tagging", s.iam.Auth(s.notImplemented))
+	addObjectSubresource(bucket, http.MethodGet, "torrent", s.iam.Auth(s.notImplemented)) // deprecated
+	addObjectSubresource(bucket, http.MethodPost, "restore", s.iam.Auth(s.notImplemented))
+	addObjectSubresource(bucket, http.MethodGet, "legal-hold", s.iam.Auth(s.notImplemented))
+	addObjectSubresource(bucket, http.MethodPut, "legal-hold", s.iam.Auth(s.notImplemented))
+	addObjectSubresource(bucket, http.MethodGet, "retention", s.iam.Auth(s.GetObjectRetention))
+	addObjectSubresource(bucket, http.MethodPut, "retention", s.iam.Auth(s.UpdateObjectRetention))
 
-	// Object root
-	r.Methods(http.MethodPut).Path("/{bucket}/{key:.*}").HeadersRegexp("x-amz-copy-source", ".+").HandlerFunc(s.iam.Auth(s.CopyObject)) // CopyObject
-	r.Methods(http.MethodPut).Path("/{bucket}/{key:.*}").HandlerFunc(s.iam.Auth(s.Upload))                                              // PutObject
-	r.Methods(http.MethodGet).Path("/{bucket}/{key:.*}").HandlerFunc(s.iam.Auth(s.Download))                                            // GetObject / SelectObjectContent
-	r.Methods(http.MethodHead).Path("/{bucket}/{key:.*}").HandlerFunc(s.iam.Auth(s.HeadObject))                                         // HeadObject
-	r.Methods(http.MethodDelete).Path("/{bucket}/{key:.*}").HandlerFunc(s.iam.Auth(s.DeleteObject))                                     // DeleteObject
-	r.Methods(http.MethodOptions).Path("/{bucket}/{key:.*}").HandlerFunc(s.iam.Auth(s.notImplemented))                                  // CORS preflight
+	// 2: Object operations without query parameters
+	// These routes have .Path("/{key:.+}") but NO .Queries()
+	bucket.Methods(http.MethodPut).Path("/{key:.+}").HeadersRegexp("x-amz-copy-source", ".+").HandlerFunc(s.iam.Auth(s.CopyObject))
+	bucket.Methods(http.MethodPut).Path("/{key:.+}").HandlerFunc(s.iam.Auth(s.Upload))
+	bucket.Methods(http.MethodGet).Path("/{key:.+}").HandlerFunc(s.iam.Auth(s.Download))
+	bucket.Methods(http.MethodHead).Path("/{key:.+}").HandlerFunc(s.iam.Auth(s.HeadObject))
+	bucket.Methods(http.MethodDelete).Path("/{key:.+}").HandlerFunc(s.iam.Auth(s.DeleteObject))
+	bucket.Methods(http.MethodOptions).Path("/{key:.+}").HandlerFunc(s.iam.Auth(s.notImplemented))
+
+	// 3: Bucket operations with query parameters
+	// These routes have .Queries() but NO .Path()
+	// Must be registered after object routes
+	addBucketSubresource(bucket, http.MethodGet, "acl", s.iam.Auth(s.notImplemented))
+	addBucketSubresource(bucket, http.MethodPut, "acl", s.iam.Auth(s.notImplemented))
+	addBucketSubresource(bucket, http.MethodGet, "cors", s.iam.Auth(s.notImplemented))
+	addBucketSubresource(bucket, http.MethodPut, "cors", s.iam.Auth(s.notImplemented))
+	addBucketSubresource(bucket, http.MethodDelete, "cors", s.iam.Auth(s.notImplemented))
+	addBucketSubresource(bucket, http.MethodGet, "lifecycle", s.iam.Auth(s.notImplemented))
+	addBucketSubresource(bucket, http.MethodPut, "lifecycle", s.iam.Auth(s.notImplemented))
+	addBucketSubresource(bucket, http.MethodDelete, "lifecycle", s.iam.Auth(s.notImplemented))
+	addBucketSubresource(bucket, http.MethodGet, "policy", s.iam.Auth(s.notImplemented))
+	addBucketSubresource(bucket, http.MethodPut, "policy", s.iam.Auth(s.notImplemented))
+	addBucketSubresource(bucket, http.MethodDelete, "policy", s.iam.Auth(s.notImplemented))
+	addBucketSubresource(bucket, http.MethodGet, "replication", s.iam.Auth(s.notImplemented))
+	addBucketSubresource(bucket, http.MethodPut, "replication", s.iam.Auth(s.notImplemented))
+	addBucketSubresource(bucket, http.MethodGet, "versioning", s.iam.Auth(s.notImplemented))
+	addBucketSubresource(bucket, http.MethodPut, "versioning", s.iam.Auth(s.notImplemented))
+	addBucketSubresource(bucket, http.MethodGet, "website", s.iam.Auth(s.notImplemented))
+	addBucketSubresource(bucket, http.MethodPut, "website", s.iam.Auth(s.notImplemented))
+	addBucketSubresource(bucket, http.MethodDelete, "website", s.iam.Auth(s.notImplemented))
+	addBucketSubresource(bucket, http.MethodGet, "tagging", s.iam.Auth(s.notImplemented))
+	addBucketSubresource(bucket, http.MethodPut, "tagging", s.iam.Auth(s.notImplemented))
+	addBucketSubresource(bucket, http.MethodDelete, "tagging", s.iam.Auth(s.notImplemented))
+	addBucketSubresource(bucket, http.MethodGet, "logging", s.iam.Auth(s.notImplemented))
+	addBucketSubresource(bucket, http.MethodPut, "logging", s.iam.Auth(s.notImplemented))
+	addBucketSubresource(bucket, http.MethodGet, "notification", s.iam.Auth(s.notImplemented))
+	addBucketSubresource(bucket, http.MethodPut, "notification", s.iam.Auth(s.notImplemented))
+	addBucketSubresource(bucket, http.MethodGet, "encryption", s.iam.Auth(s.notImplemented))
+	addBucketSubresource(bucket, http.MethodPut, "encryption", s.iam.Auth(s.notImplemented))
+	addBucketSubresource(bucket, http.MethodDelete, "encryption", s.iam.Auth(s.notImplemented))
+	addBucketSubresource(bucket, http.MethodGet, "object-lock", s.iam.Auth(s.notImplemented))
+	addBucketSubresource(bucket, http.MethodPut, "object-lock", s.iam.Auth(s.notImplemented))
+	addBucketSubresource(bucket, http.MethodGet, "ownershipControls", s.iam.Auth(s.notImplemented))
+	addBucketSubresource(bucket, http.MethodPut, "ownershipControls", s.iam.Auth(s.notImplemented))
+	addBucketSubresource(bucket, http.MethodDelete, "ownershipControls", s.iam.Auth(s.notImplemented))
+	addBucketSubresource(bucket, http.MethodGet, "accelerate", s.iam.Auth(s.notImplemented))
+	addBucketSubresource(bucket, http.MethodPut, "accelerate", s.iam.Auth(s.notImplemented))
+	addBucketSubresource(bucket, http.MethodGet, "location", s.iam.Auth(s.notImplemented))
+	addBucketSubresource(bucket, http.MethodGet, "uploads", s.iam.Auth(s.notImplemented)) // List multipart uploads
+	addBucketSubresource(bucket, http.MethodGet, "versions", s.iam.Auth(s.notImplemented))
+	addBucketSubresource(bucket, http.MethodGet, "requestPayment", s.iam.Auth(s.notImplemented))
+	addBucketSubresource(bucket, http.MethodPut, "requestPayment", s.iam.Auth(s.notImplemented))
+	addBucketSubresource(bucket, http.MethodGet, "inventory", s.iam.Auth(s.notImplemented))
+	addBucketSubresource(bucket, http.MethodPut, "inventory", s.iam.Auth(s.notImplemented))
+	addBucketSubresource(bucket, http.MethodDelete, "inventory", s.iam.Auth(s.notImplemented))
+	addBucketSubresource(bucket, http.MethodGet, "metrics", s.iam.Auth(s.notImplemented))
+	addBucketSubresource(bucket, http.MethodPut, "metrics", s.iam.Auth(s.notImplemented))
+	addBucketSubresource(bucket, http.MethodDelete, "metrics", s.iam.Auth(s.notImplemented))
+	addBucketSubresource(bucket, http.MethodGet, "analytics", s.iam.Auth(s.notImplemented))
+	addBucketSubresource(bucket, http.MethodPut, "analytics", s.iam.Auth(s.notImplemented))
+	addBucketSubresource(bucket, http.MethodDelete, "analytics", s.iam.Auth(s.notImplemented))
+	addBucketSubresource(bucket, http.MethodGet, "intelligent-tiering", s.iam.Auth(s.notImplemented))
+	addBucketSubresource(bucket, http.MethodPut, "intelligent-tiering", s.iam.Auth(s.notImplemented))
+	addBucketSubresource(bucket, http.MethodDelete, "intelligent-tiering", s.iam.Auth(s.notImplemented))
+	addBucketSubresource(bucket, http.MethodPost, "delete", s.iam.Auth(s.DeleteObjects))
+
+	// 4: Bucket operations without query parameters
+	// These routes have neither .Path() nor .Queries()
+	// Must be registered last
+	bucket.Methods(http.MethodPut).HandlerFunc(s.iam.Auth(s.CreateBucket))
+	bucket.Methods(http.MethodHead).HandlerFunc(s.iam.Auth(s.notImplemented))
+	bucket.Methods(http.MethodGet).HandlerFunc(s.iam.Auth(s.ListObjects))
+	bucket.Methods(http.MethodDelete).HandlerFunc(s.iam.Auth(s.DeleteBucket))
+	bucket.Methods(http.MethodOptions).HandlerFunc(s.iam.Auth(s.notImplemented))
+
 }
 
 func (s *S3Gateway) notImplemented(w http.ResponseWriter, _ *http.Request) {
@@ -191,12 +195,11 @@ type gatewayStats struct {
 // query-string flag like ?acl= or ?cors= to disambiguate behavior.
 // Registers both with and without trailing slash.
 func addBucketSubresource(r *mux.Router, method, sub string, h http.HandlerFunc) {
-	r.Methods(method).Path("/{bucket}").Queries(sub, "").HandlerFunc(h)
-	r.Methods(method).Path("/{bucket}/").Queries(sub, "").HandlerFunc(h)
+	r.Methods(method).Queries(sub, "").HandlerFunc(h)
 }
 
 // addObjectSubresource registers an object-level subresource path using a
 // query-string flag like ?tagging= or ?retention= to disambiguate behavior.
 func addObjectSubresource(r *mux.Router, method, sub string, h http.HandlerFunc) {
-	r.Methods(method).Path("/{bucket}/{key:.*}").Queries(sub, "").HandlerFunc(h)
+	r.Methods(method).Path("/{key:.+}").Queries(sub, "").HandlerFunc(h)
 }
