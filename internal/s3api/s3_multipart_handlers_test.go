@@ -4,10 +4,11 @@ import (
 	"bytes"
 	"encoding/xml"
 	"fmt"
-	"github.com/wpnpeiris/nats-s3/internal/logging"
-	"github.com/wpnpeiris/nats-s3/internal/testutil"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/wpnpeiris/nats-s3/internal/logging"
+	"github.com/wpnpeiris/nats-s3/internal/testutil"
 
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
@@ -25,7 +26,7 @@ func TestInitiateMultipartUpload_SucceedsAndPersistsSession(t *testing.T) {
 	defer s.Shutdown()
 
 	logger := logging.NewLogger(logging.Config{Level: "debug"})
-	gw, err := NewS3Gateway(logger, s.ClientURL(), nil, nil)
+	gw, err := NewS3Gateway(logger, s.ClientURL(), nil, nil, S3GatewayOptions{})
 	if err != nil {
 		t.Fatalf("failed to create S3 gateway: %v", err)
 	}
@@ -65,7 +66,7 @@ func TestListParts_PaginatesDeterministically(t *testing.T) {
 	defer s.Shutdown()
 
 	logger := logging.NewLogger(logging.Config{Level: "debug"})
-	gw, err := NewS3Gateway(logger, s.ClientURL(), nil, nil)
+	gw, err := NewS3Gateway(logger, s.ClientURL(), nil, nil, S3GatewayOptions{})
 	if err != nil {
 		t.Fatalf("failed to create S3 gateway: %v", err)
 	}
@@ -154,7 +155,7 @@ func TestListParts_NoParts(t *testing.T) {
 	defer s.Shutdown()
 
 	logger := logging.NewLogger(logging.Config{Level: "debug"})
-	gw, err := NewS3Gateway(logger, s.ClientURL(), nil, nil)
+	gw, err := NewS3Gateway(logger, s.ClientURL(), nil, nil, S3GatewayOptions{})
 	if err != nil {
 		t.Fatalf("failed to create S3 gateway: %v", err)
 	}
@@ -202,7 +203,7 @@ func TestListParts_MarkerBeyondLast(t *testing.T) {
 	defer s.Shutdown()
 
 	logger := logging.NewLogger(logging.Config{Level: "debug"})
-	gw, err := NewS3Gateway(logger, s.ClientURL(), nil, nil)
+	gw, err := NewS3Gateway(logger, s.ClientURL(), nil, nil, S3GatewayOptions{})
 	if err != nil {
 		t.Fatalf("failed to create S3 gateway: %v", err)
 	}
@@ -262,7 +263,7 @@ func TestListParts_NonContiguousParts(t *testing.T) {
 	defer s.Shutdown()
 
 	logger := logging.NewLogger(logging.Config{Level: "debug"})
-	gw, err := NewS3Gateway(logger, s.ClientURL(), nil, nil)
+	gw, err := NewS3Gateway(logger, s.ClientURL(), nil, nil, S3GatewayOptions{})
 	if err != nil {
 		t.Fatalf("failed to create S3 gateway: %v", err)
 	}
