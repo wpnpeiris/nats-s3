@@ -739,7 +739,7 @@ func updateETagHeader(obj *nats.ObjectInfo, w http.ResponseWriter) {
 
 // updateLastModifiedHeader writes 'Last-Modified' header in response
 func updateLastModifiedHeader(obj *nats.ObjectInfo, w http.ResponseWriter) {
-	w.Header().Set("Last-Modified", obj.ModTime.UTC().Format(time.RFC1123))
+	w.Header().Set("Last-Modified", obj.ModTime.UTC().Format(http.TimeFormat))
 }
 
 // updateMetadataHeaders writes metadata headers in response

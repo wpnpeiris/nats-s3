@@ -23,6 +23,7 @@ type S3Gateway struct {
 	client         *client.NatsObjectClient
 	multiPartStore *client.MultiPartStore
 	iam            *auth.IdentityAccessManagement
+	logger         log.Logger
 	started        time.Time
 }
 
@@ -55,6 +56,7 @@ func NewS3Gateway(logger log.Logger, natsServers string, natsOptions []nats.Opti
 		client:         oc,
 		multiPartStore: mps,
 		iam:            auth.NewIdentityAccessManagement(credStore),
+		logger:         logger,
 		started:        time.Now().UTC(),
 	}, nil
 }
@@ -149,8 +151,8 @@ func (s *S3Gateway) RegisterRoutes(router *mux.Router) {
 	addBucketSubresource(bucket, http.MethodDelete, "ownershipControls", s.iam.Auth(s.notImplemented))
 	addBucketSubresource(bucket, http.MethodGet, "accelerate", s.iam.Auth(s.notImplemented))
 	addBucketSubresource(bucket, http.MethodPut, "accelerate", s.iam.Auth(s.notImplemented))
-	addBucketSubresource(bucket, http.MethodGet, "location", s.iam.Auth(s.notImplemented))
-	addBucketSubresource(bucket, http.MethodGet, "uploads", s.iam.Auth(s.notImplemented)) // List multipart uploads
+	addBucketSubresource(bucket, http.MethodGet, "location", s.iam.Auth(s.GetBucketLocation))
+	addBucketSubresource(bucket, http.MethodGet, "uploads", s.iam.Auth(s.notImplemented))
 	addBucketSubresource(bucket, http.MethodGet, "versions", s.iam.Auth(s.notImplemented))
 	addBucketSubresource(bucket, http.MethodGet, "requestPayment", s.iam.Auth(s.notImplemented))
 	addBucketSubresource(bucket, http.MethodPut, "requestPayment", s.iam.Auth(s.notImplemented))
@@ -179,7 +181,12 @@ func (s *S3Gateway) RegisterRoutes(router *mux.Router) {
 
 }
 
-func (s *S3Gateway) notImplemented(w http.ResponseWriter, _ *http.Request) {
+func (s *S3Gateway) notImplemented(w http.ResponseWriter, r *http.Request) {
+	endpoint := fmt.Sprintf("%s %s", r.Method, r.URL.Path)
+	if r.URL.RawQuery != "" {
+		endpoint = fmt.Sprintf("%s?%s", endpoint, r.URL.RawQuery)
+	}
+	logging.Info(s.logger, "msg", "Unimplemented endpoint", "endpoint", endpoint)
 	w.WriteHeader(http.StatusNotImplemented)
 }
 

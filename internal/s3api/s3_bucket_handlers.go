@@ -20,6 +20,12 @@ type BucketsResult struct {
 	Buckets []*s3.Bucket `xml:"Buckets>Bucket"`
 }
 
+// LocationConstraintResponse is the XML response for GetBucketLocation.
+type LocationConstraintResponse struct {
+	XMLName  xml.Name `xml:"http://s3.amazonaws.com/doc/2006-03-01/ LocationConstraint"`
+	Location string   `xml:",chardata"`
+}
+
 // CreateBucket handles S3 CreateBucket by creating a JetStream Object Store
 // bucket and returning a minimal S3-compatible XML response.
 func (s *S3Gateway) CreateBucket(w http.ResponseWriter, r *http.Request) {
@@ -104,6 +110,29 @@ func (s *S3Gateway) ListBuckets(w http.ResponseWriter, r *http.Request) {
 
 	response := BucketsResult{
 		Buckets: buckets,
+	}
+
+	model.WriteXMLResponse(w, r, http.StatusOK, response)
+}
+
+// GetBucketLocation returns the region where the bucket resides.
+func (s *S3Gateway) GetBucketLocation(w http.ResponseWriter, r *http.Request) {
+	bucket := mux.Vars(r)["bucket"]
+
+	// Check if bucket is empty before
+	_, err := s.client.ListObjects(bucket)
+	if err != nil {
+		if errors.Is(err, client.ErrBucketNotFound) {
+			model.WriteErrorResponse(w, r, model.ErrNoSuchBucket)
+			return
+		}
+		model.WriteErrorResponse(w, r, model.ErrInternalError)
+		return
+	}
+
+	// Return empty location constraint for default location
+	response := LocationConstraintResponse{
+		Location: "",
 	}
 
 	model.WriteXMLResponse(w, r, http.StatusOK, response)
