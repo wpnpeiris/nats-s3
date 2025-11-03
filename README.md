@@ -152,8 +152,14 @@ Run
 Flags
 - `--listen`: HTTP bind address for the S3 gateway (default `0.0.0.0:5222`).
 - `--natsServers`: Comma‑separated NATS server URLs (default from `nats.DefaultURL`).
-- `--natsUser`, `--natsPassword`: Optional NATS credentials for connecting to NATS server.
+- `--natsUser`, `--natsPassword`: Optional NATS credentials for connecting to NATS server (basic auth).
+- `--natsToken`: NATS server token for token-based authentication.
+- `--natsNKeyFile`: NATS server NKey seed file path for NKey authentication.
+- `--natsCredsFile`: NATS server credentials file path for JWT authentication.
+- `--natsReplicas`: Number of NATS replicas for each jetstream element (default 1).
 - `--s3.credentials`: Path to S3 credentials file (JSON format, required).
+- `--log.format`: Log output format: logfmt or json (default logfmt).
+- `--log.level`: Log level: debug, info, warn, error (default info).
 - `--http.read-timeout`: HTTP server read timeout (default 15m).
 - `--http.write-timeout`: HTTP server write timeout (default 15m).
 - `--http.idle-timeout`: HTTP server idle timeout (default 120s).
