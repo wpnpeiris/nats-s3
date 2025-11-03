@@ -153,7 +153,6 @@ Flags
 - `--listen`: HTTP bind address for the S3 gateway (default `0.0.0.0:5222`).
 - `--natsServers`: Comma‑separated NATS server URLs (default from `nats.DefaultURL`).
 - `--natsUser`, `--natsPassword`: Optional NATS credentials for connecting to NATS server.
-- `--natsUser`, `--natsPassword`: Optional NATS credentials for connecting to NATS server (basic auth).
 - `--natsToken`: NATS server token for token-based authentication.
 - `--natsNKeyFile`: NATS server NKey seed file path for NKey authentication.
 - `--natsCredsFile`: NATS server credentials file path for JWT authentication.
