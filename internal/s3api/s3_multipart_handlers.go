@@ -15,6 +15,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
 	"github.com/wpnpeiris/nats-s3/internal/client"
+	"github.com/wpnpeiris/nats-s3/internal/streams"
 )
 
 const (
@@ -79,39 +80,77 @@ func (s *S3Gateway) UploadPart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-    // Validate Content-Length / limits
-    if r.ContentLength < 0 {
-        model.WriteErrorResponse(w, r, model.ErrMissingFields)
-        return
-    }
-    isStreaming := isAWSSigV4StreamingPayload(r)
-    if isStreaming {
-        // Enforce part size using decoded length header when available
-        if v := r.Header.Get("x-amz-decoded-content-length"); v != "" {
-            if dl, err := strconv.ParseInt(v, 10, 64); err == nil {
-                if dl > maxPartSize {
-                    model.WriteErrorResponse(w, r, model.ErrEntityTooLarge)
-                    return
-                }
-            }
-        }
-    } else {
-        if r.ContentLength > maxPartSize {
-            model.WriteErrorResponse(w, r, model.ErrEntityTooLarge)
-            return
-        }
-    }
+	// Validate Content-Length
+	if r.ContentLength < 0 {
+		model.WriteErrorResponse(w, r, model.ErrMissingFields)
+		return
+	}
+	if r.ContentLength > maxPartSize {
+		model.WriteErrorResponse(w, r, model.ErrEntityTooLarge)
+		return
+	}
 
-    // Choose appropriate reader. If streaming SigV4, decode on the fly.
-    var bodyReader io.ReadCloser
-    if isStreaming {
-        dec := NewAWSChunkedReader(r.Body)
-        bodyReader = &limitedReadCloser{Reader: io.LimitReader(dec, maxPartSize+1), Closer: dec}
-    } else {
-        bodyReader = &limitedReadCloser{Reader: io.LimitReader(r.Body, maxPartSize+1), Closer: r.Body}
-    }
+	// Use LimitReader as defense-in-depth to ensure we never read more than maxPartSize
+	// Wrap it in a limitedReadCloser to satisfy io.ReadCloser interface
+	limitedBody := &limitedReadCloser{
+		Reader: io.LimitReader(r.Body, maxPartSize+1),
+		Closer: r.Body,
+	}
 
-    etag, err := s.multiPartStore.UploadPart(bucket, key, uploadID, partNum, bodyReader)
+	etag, err := s.multiPartStore.UploadPart(bucket, key, uploadID, partNum, limitedBody)
+	if err != nil {
+		if errors.Is(err, client.ErrUploadNotFound) || errors.Is(err, client.ErrUploadCompleted) {
+			model.WriteErrorResponse(w, r, model.ErrNoSuchUpload)
+			return
+		}
+		model.WriteErrorResponse(w, r, model.ErrInternalError)
+		return
+	}
+
+	model.SetEtag(w, etag)
+	model.WriteEmptyResponse(w, r, http.StatusOK)
+}
+
+// StreamUploadPart handles SigV4 streaming-chunked multipart uploads.
+// It decodes the AWS streaming body and enforces limits on decoded size.
+func (s *S3Gateway) StreamUploadPart(w http.ResponseWriter, r *http.Request) {
+	bucket := mux.Vars(r)["bucket"]
+	key := mux.Vars(r)["key"]
+	uploadID := r.URL.Query().Get("uploadId")
+
+	if uploadID == "" {
+		model.WriteErrorResponse(w, r, model.ErrNoSuchUpload)
+		return
+	}
+
+	pnStr := r.URL.Query().Get("partNumber")
+	partNum, _ := strconv.Atoi(pnStr)
+	if partNum < 1 || partNum > maxUploadsList {
+		model.WriteErrorResponse(w, r, model.ErrInvalidPart)
+		return
+	}
+
+	// This handler is intended for streaming SigV4 payloads; validate if present.
+	if !streams.IsAWSSigV4StreamingPayload(r) {
+		model.WriteErrorResponse(w, r, model.ErrInvalidRequest)
+		return
+	}
+
+	// Enforce part size using decoded length header when available
+	if v := r.Header.Get("x-amz-decoded-content-length"); v != "" {
+		if dl, err := strconv.ParseInt(v, 10, 64); err == nil {
+			if dl > maxPartSize {
+				model.WriteErrorResponse(w, r, model.ErrEntityTooLarge)
+				return
+			}
+		}
+	}
+
+	// Decode streaming body and enforce maxPartSize
+	dec := streams.NewAWSStreamReader(r.Body)
+	bodyReader := &limitedReadCloser{Reader: io.LimitReader(dec, maxPartSize+1), Closer: dec}
+
+	etag, err := s.multiPartStore.UploadPart(bucket, key, uploadID, partNum, bodyReader)
 	if err != nil {
 		if errors.Is(err, client.ErrUploadNotFound) || errors.Is(err, client.ErrUploadCompleted) {
 			model.WriteErrorResponse(w, r, model.ErrNoSuchUpload)

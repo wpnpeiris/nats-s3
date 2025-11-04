@@ -85,6 +85,12 @@ func (s *S3Gateway) RegisterRoutes(router *mux.Router) {
 
 	// Multipart upload operations
 	addObjectSubresource(bucket, http.MethodPost, "uploads", s.iam.Auth(s.InitiateMultipartUpload))
+	// Route SigV4 streaming-chunked parts to a dedicated handler
+	bucket.Methods(http.MethodPut).Path("/{key:.+}").
+		Queries("uploadId", "{uploadId}").
+		HeadersRegexp("x-amz-content-sha256", "(?i)^STREAMING-AWS4-HMAC-SHA256-PAYLOAD(?:-TRAILER)?$").
+		HandlerFunc(s.iam.Auth(s.StreamUploadPart))
+	// Default multipart part upload handler (non-streaming)
 	bucket.Methods(http.MethodPut).Path("/{key:.+}").Queries("uploadId", "{uploadId}").HandlerFunc(s.iam.Auth(s.UploadPart))
 	bucket.Methods(http.MethodGet).Path("/{key:.+}").Queries("uploadId", "{uploadId}").HandlerFunc(s.iam.Auth(s.ListParts))
 	bucket.Methods(http.MethodPost).Path("/{key:.+}").Queries("uploadId", "{uploadId}").HandlerFunc(s.iam.Auth(s.CompleteMultipartUpload))
