@@ -112,7 +112,6 @@ func (s *S3Gateway) UploadPart(w http.ResponseWriter, r *http.Request) {
 }
 
 // StreamUploadPart handles SigV4 streaming-chunked multipart uploads.
-// It decodes the AWS streaming body and enforces limits on decoded size.
 func (s *S3Gateway) StreamUploadPart(w http.ResponseWriter, r *http.Request) {
 	bucket := mux.Vars(r)["bucket"]
 	key := mux.Vars(r)["key"]
@@ -130,25 +129,17 @@ func (s *S3Gateway) StreamUploadPart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// This handler is intended for streaming SigV4 payloads; validate if present.
-	if !streams.IsAWSSigV4StreamingPayload(r) {
+	if !streams.IsSigV4StreamingPayload(r) {
 		model.WriteErrorResponse(w, r, model.ErrInvalidRequest)
 		return
 	}
 
-	// Enforce part size using decoded length header when available
-	if v := r.Header.Get("x-amz-decoded-content-length"); v != "" {
-		if dl, err := strconv.ParseInt(v, 10, 64); err == nil {
-			if dl > maxPartSize {
-				model.WriteErrorResponse(w, r, model.ErrEntityTooLarge)
-				return
-			}
-		}
+	if dl, err := strconv.ParseInt(r.Header.Get("x-amz-decoded-content-length"), 10, 64); err == nil && dl > maxPartSize {
+		model.WriteErrorResponse(w, r, model.ErrEntityTooLarge)
+		return
 	}
 
-	// Decode streaming body and enforce maxPartSize
-	dec := streams.NewAWSStreamReader(r.Body)
-	bodyReader := &limitedReadCloser{Reader: io.LimitReader(dec, maxPartSize+1), Closer: dec}
+	bodyReader := streams.NewLimitedSigV4StreamReader(r.Body, maxPartSize+1)
 
 	etag, err := s.multiPartStore.UploadPart(bucket, key, uploadID, partNum, bodyReader)
 	if err != nil {

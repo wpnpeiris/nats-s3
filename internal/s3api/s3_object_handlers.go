@@ -428,53 +428,17 @@ func (s *S3Gateway) Upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	isStreaming := streams.IsAWSSigV4StreamingPayload(r)
-	if isStreaming {
-		// For streaming SigV4, enforce limits using decoded length header when available
-		if v := r.Header.Get("x-amz-decoded-content-length"); v != "" {
-			if dl, err := strconv.ParseInt(v, 10, 64); err == nil {
-				if dl > maxSinglePutSize {
-					model.WriteErrorResponse(w, r, model.ErrEntityTooLarge)
-					return
-				}
-			}
-		}
-	} else {
-		if r.ContentLength > maxSinglePutSize {
-			model.WriteErrorResponse(w, r, model.ErrEntityTooLarge)
-			return
-		}
+	if r.ContentLength > maxSinglePutSize {
+		model.WriteErrorResponse(w, r, model.ErrEntityTooLarge)
+		return
 	}
 
-	var body []byte
-	var err error
-	if isStreaming {
-		// Decode AWS SigV4 streaming-chunked body
-		dec := streams.NewAWSStreamReader(r.Body)
-		defer dec.Close()
-		limitedBody := io.LimitReader(dec, maxSinglePutSize+1)
-		body, err = io.ReadAll(limitedBody)
-		if err != nil {
-			model.WriteErrorResponse(w, r, model.ErrInternalError)
-			return
-		}
-		// Verify decoded length if client provided x-amz-decoded-content-length
-		if v := r.Header.Get("x-amz-decoded-content-length"); v != "" {
-			if dl, err := strconv.ParseInt(v, 10, 64); err == nil {
-				if int64(len(body)) != dl {
-					model.WriteErrorResponse(w, r, model.ErrInvalidRequest)
-					return
-				}
-			}
-		}
-	} else {
-		// Use LimitReader as defense-in-depth to ensure we never read more than maxSinglePutSize
-		limitedBody := io.LimitReader(r.Body, maxSinglePutSize+1)
-		body, err = io.ReadAll(limitedBody)
-		if err != nil {
-			model.WriteErrorResponse(w, r, model.ErrInternalError)
-			return
-		}
+	// Use LimitReader as defense-in-depth to ensure we never read more than maxSinglePutSize
+	limitedBody := io.LimitReader(r.Body, maxSinglePutSize+1)
+	body, err := io.ReadAll(limitedBody)
+	if err != nil {
+		model.WriteErrorResponse(w, r, model.ErrInternalError)
+		return
 	}
 
 	// Additional check: if we read more than allowed, reject the request
@@ -487,6 +451,66 @@ func (s *S3Gateway) Upload(w http.ResponseWriter, r *http.Request) {
 	meta := extractMetadata(r)
 
 	log.Println("Upload to", bucket, "with key", key, " with content-type", contentType, " with user-meta", meta)
+	res, err := s.client.PutObject(bucket, key, contentType, meta, body)
+	if err != nil {
+		if errors.Is(err, client.ErrBucketNotFound) {
+			model.WriteErrorResponse(w, r, model.ErrNoSuchBucket)
+			return
+		}
+		model.WriteErrorResponse(w, r, model.ErrInternalError)
+		return
+	}
+	if res.Digest != "" {
+		w.Header().Set("ETag", formatETag(res.Digest))
+	}
+	model.WriteEmptyResponse(w, r, http.StatusOK)
+}
+
+// StreamUpload handles SigV4 streaming-chunked single PUT uploads.
+func (s *S3Gateway) StreamUpload(w http.ResponseWriter, r *http.Request) {
+	bucket := mux.Vars(r)["bucket"]
+	key := mux.Vars(r)["key"]
+
+	const maxSinglePutSize = 5 * 1024 * 1024 * 1024
+
+	if !streams.IsSigV4StreamingPayload(r) {
+		model.WriteErrorResponse(w, r, model.ErrInvalidRequest)
+		return
+	}
+
+	if dl, err := strconv.ParseInt(r.Header.Get("x-amz-decoded-content-length"), 10, 64); err == nil && dl > maxSinglePutSize {
+		model.WriteErrorResponse(w, r, model.ErrEntityTooLarge)
+		return
+	}
+
+	if err := streams.CheckDecodedLengthLimit(r, maxSinglePutSize); err != nil {
+		model.WriteErrorResponse(w, r, model.ErrEntityTooLarge)
+		return
+	}
+
+	dec := streams.NewSigV4StreamReader(r.Body)
+	defer dec.Close()
+	limitedBody := io.LimitReader(dec, maxSinglePutSize+1)
+	body, err := io.ReadAll(limitedBody)
+	if err != nil {
+		model.WriteErrorResponse(w, r, model.ErrInternalError)
+		return
+	}
+
+	if err := streams.CheckDecodedLengthMatches(r, int64(len(body))); err != nil {
+		model.WriteErrorResponse(w, r, model.ErrInvalidRequest)
+		return
+	}
+
+	if int64(len(body)) > maxSinglePutSize {
+		model.WriteErrorResponse(w, r, model.ErrEntityTooLarge)
+		return
+	}
+
+	contentType := extractContentType(r)
+	meta := extractMetadata(r)
+
+	log.Println("StreamUpload to", bucket, "with key", key, " with content-type", contentType, " with user-meta", meta)
 	res, err := s.client.PutObject(bucket, key, contentType, meta, body)
 	if err != nil {
 		if errors.Is(err, client.ErrBucketNotFound) {

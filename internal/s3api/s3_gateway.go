@@ -113,6 +113,11 @@ func (s *S3Gateway) RegisterRoutes(router *mux.Router) {
 	// 2: Object operations without query parameters
 	// These routes have .Path("/{key:.+}") but NO .Queries()
 	bucket.Methods(http.MethodPut).Path("/{key:.+}").HeadersRegexp("x-amz-copy-source", ".+").HandlerFunc(s.iam.Auth(s.CopyObject))
+	// Route streaming SigV4 payload uploads to dedicated handler first
+	bucket.Methods(http.MethodPut).Path("/{key:.+}").
+		HeadersRegexp("x-amz-content-sha256", "(?i)^STREAMING-AWS4-HMAC-SHA256-PAYLOAD(?:-TRAILER)?$").
+		HandlerFunc(s.iam.Auth(s.StreamUpload))
+	// Default single PUT handler
 	bucket.Methods(http.MethodPut).Path("/{key:.+}").HandlerFunc(s.iam.Auth(s.Upload))
 	bucket.Methods(http.MethodGet).Path("/{key:.+}").HandlerFunc(s.iam.Auth(s.Download))
 	bucket.Methods(http.MethodHead).Path("/{key:.+}").HandlerFunc(s.iam.Auth(s.HeadObject))
