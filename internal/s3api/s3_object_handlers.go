@@ -80,24 +80,6 @@ type DeletedObject struct {
 	VersionId string `xml:"VersionId,omitempty"`
 }
 
-// handleObjectError writes appropriate error response for object operations.
-// Returns true if an error was handled, false if err is nil.
-func (s *S3Gateway) handleObjectError(w http.ResponseWriter, r *http.Request, err error) bool {
-	if err == nil {
-		return false
-	}
-	if errors.Is(err, client.ErrBucketNotFound) {
-		model.WriteErrorResponse(w, r, model.ErrNoSuchBucket)
-		return true
-	}
-	if errors.Is(err, client.ErrObjectNotFound) {
-		model.WriteErrorResponse(w, r, model.ErrNoSuchKey)
-		return true
-	}
-	model.WriteErrorResponse(w, r, model.ErrInternalError)
-	return true
-}
-
 // CopyObject performs a server-side copy of an object from source to destination.
 func (s *S3Gateway) CopyObject(w http.ResponseWriter, r *http.Request) {
 	destBucket := mux.Vars(r)["bucket"]
@@ -585,6 +567,24 @@ func groupObjectsByDelimiter(objects []*nats.ObjectInfo, prefix, delimiter strin
 	}
 
 	return contents, commonPrefixes
+}
+
+// handleObjectError writes appropriate error response for object operations.
+// Returns true if an error was handled, false if err is nil.
+func (s *S3Gateway) handleObjectError(w http.ResponseWriter, r *http.Request, err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, client.ErrBucketNotFound) {
+		model.WriteErrorResponse(w, r, model.ErrNoSuchBucket)
+		return true
+	}
+	if errors.Is(err, client.ErrObjectNotFound) {
+		model.WriteErrorResponse(w, r, model.ErrNoSuchKey)
+		return true
+	}
+	model.WriteErrorResponse(w, r, model.ErrInternalError)
+	return true
 }
 
 // parseRangeHeader parses an HTTP Range header and returns start and end byte positions.
