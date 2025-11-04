@@ -418,32 +418,69 @@ func (s *S3Gateway) Upload(w http.ResponseWriter, r *http.Request) {
 	bucket := mux.Vars(r)["bucket"]
 	key := mux.Vars(r)["key"]
 
-	// S3-compatible size limit: 5GB for single PUT operation
-	const maxSinglePutSize = 5 * 1024 * 1024 * 1024
+    // S3-compatible size limit: 5GB for single PUT operation
+    const maxSinglePutSize = 5 * 1024 * 1024 * 1024
 
-	// Validate Content-Length to prevent DoS attacks
-	if r.ContentLength < 0 {
-		model.WriteErrorResponse(w, r, model.ErrMissingFields)
-		return
-	}
-	if r.ContentLength > maxSinglePutSize {
-		model.WriteErrorResponse(w, r, model.ErrEntityTooLarge)
-		return
-	}
+    // Validate Content-Length to prevent DoS attacks
+    if r.ContentLength < 0 {
+        model.WriteErrorResponse(w, r, model.ErrMissingFields)
+        return
+    }
 
-	// Use LimitReader as defense-in-depth to ensure we never read more than maxSinglePutSize
-	limitedBody := io.LimitReader(r.Body, maxSinglePutSize+1)
-	body, err := io.ReadAll(limitedBody)
-	if err != nil {
-		model.WriteErrorResponse(w, r, model.ErrInternalError)
-		return
-	}
+    isStreaming := isAWSSigV4StreamingPayload(r)
+    if isStreaming {
+        // For streaming SigV4, enforce limits using decoded length header when available
+        if v := r.Header.Get("x-amz-decoded-content-length"); v != "" {
+            if dl, err := strconv.ParseInt(v, 10, 64); err == nil {
+                if dl > maxSinglePutSize {
+                    model.WriteErrorResponse(w, r, model.ErrEntityTooLarge)
+                    return
+                }
+            }
+        }
+    } else {
+        if r.ContentLength > maxSinglePutSize {
+            model.WriteErrorResponse(w, r, model.ErrEntityTooLarge)
+            return
+        }
+    }
 
-	// Additional check: if we read more than expected, reject the request
-	if int64(len(body)) > maxSinglePutSize {
-		model.WriteErrorResponse(w, r, model.ErrEntityTooLarge)
-		return
-	}
+    var body []byte
+    var err error
+    if isStreaming {
+        // Decode AWS SigV4 streaming-chunked body
+        dec := NewAWSChunkedReader(r.Body)
+        defer dec.Close()
+        limitedBody := io.LimitReader(dec, maxSinglePutSize+1)
+        body, err = io.ReadAll(limitedBody)
+        if err != nil {
+            model.WriteErrorResponse(w, r, model.ErrInternalError)
+            return
+        }
+        // Verify decoded length if client provided x-amz-decoded-content-length
+        if v := r.Header.Get("x-amz-decoded-content-length"); v != "" {
+            if dl, err := strconv.ParseInt(v, 10, 64); err == nil {
+                if int64(len(body)) != dl {
+                    model.WriteErrorResponse(w, r, model.ErrInvalidRequest)
+                    return
+                }
+            }
+        }
+    } else {
+        // Use LimitReader as defense-in-depth to ensure we never read more than maxSinglePutSize
+        limitedBody := io.LimitReader(r.Body, maxSinglePutSize+1)
+        body, err = io.ReadAll(limitedBody)
+        if err != nil {
+            model.WriteErrorResponse(w, r, model.ErrInternalError)
+            return
+        }
+    }
+
+    // Additional check: if we read more than allowed, reject the request
+    if int64(len(body)) > maxSinglePutSize {
+        model.WriteErrorResponse(w, r, model.ErrEntityTooLarge)
+        return
+    }
 
 	contentType := extractContentType(r)
 	meta := extractMetadata(r)

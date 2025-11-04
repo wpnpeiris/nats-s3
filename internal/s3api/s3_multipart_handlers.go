@@ -79,24 +79,39 @@ func (s *S3Gateway) UploadPart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate Content-Length
-	if r.ContentLength < 0 {
-		model.WriteErrorResponse(w, r, model.ErrMissingFields)
-		return
-	}
-	if r.ContentLength > maxPartSize {
-		model.WriteErrorResponse(w, r, model.ErrEntityTooLarge)
-		return
-	}
+    // Validate Content-Length / limits
+    if r.ContentLength < 0 {
+        model.WriteErrorResponse(w, r, model.ErrMissingFields)
+        return
+    }
+    isStreaming := isAWSSigV4StreamingPayload(r)
+    if isStreaming {
+        // Enforce part size using decoded length header when available
+        if v := r.Header.Get("x-amz-decoded-content-length"); v != "" {
+            if dl, err := strconv.ParseInt(v, 10, 64); err == nil {
+                if dl > maxPartSize {
+                    model.WriteErrorResponse(w, r, model.ErrEntityTooLarge)
+                    return
+                }
+            }
+        }
+    } else {
+        if r.ContentLength > maxPartSize {
+            model.WriteErrorResponse(w, r, model.ErrEntityTooLarge)
+            return
+        }
+    }
 
-	// Use LimitReader as defense-in-depth to ensure we never read more than maxPartSize
-	// Wrap it in a limitedReadCloser to satisfy io.ReadCloser interface
-	limitedBody := &limitedReadCloser{
-		Reader: io.LimitReader(r.Body, maxPartSize+1),
-		Closer: r.Body,
-	}
+    // Choose appropriate reader. If streaming SigV4, decode on the fly.
+    var bodyReader io.ReadCloser
+    if isStreaming {
+        dec := NewAWSChunkedReader(r.Body)
+        bodyReader = &limitedReadCloser{Reader: io.LimitReader(dec, maxPartSize+1), Closer: dec}
+    } else {
+        bodyReader = &limitedReadCloser{Reader: io.LimitReader(r.Body, maxPartSize+1), Closer: r.Body}
+    }
 
-	etag, err := s.multiPartStore.UploadPart(bucket, key, uploadID, partNum, limitedBody)
+    etag, err := s.multiPartStore.UploadPart(bucket, key, uploadID, partNum, bodyReader)
 	if err != nil {
 		if errors.Is(err, client.ErrUploadNotFound) || errors.Is(err, client.ErrUploadCompleted) {
 			model.WriteErrorResponse(w, r, model.ErrNoSuchUpload)
