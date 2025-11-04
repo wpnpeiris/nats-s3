@@ -80,6 +80,24 @@ type DeletedObject struct {
 	VersionId string `xml:"VersionId,omitempty"`
 }
 
+// handleObjectError writes appropriate error response for object operations.
+// Returns true if an error was handled, false if err is nil.
+func (s *S3Gateway) handleObjectError(w http.ResponseWriter, r *http.Request, err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, client.ErrBucketNotFound) {
+		model.WriteErrorResponse(w, r, model.ErrNoSuchBucket)
+		return true
+	}
+	if errors.Is(err, client.ErrObjectNotFound) {
+		model.WriteErrorResponse(w, r, model.ErrNoSuchKey)
+		return true
+	}
+	model.WriteErrorResponse(w, r, model.ErrInternalError)
+	return true
+}
+
 // CopyObject performs a server-side copy of an object from source to destination.
 func (s *S3Gateway) CopyObject(w http.ResponseWriter, r *http.Request) {
 	destBucket := mux.Vars(r)["bucket"]
@@ -96,16 +114,7 @@ func (s *S3Gateway) CopyObject(w http.ResponseWriter, r *http.Request) {
 
 	// Get source object
 	sourceObj, sourceData, err := s.client.GetObject(sourceBucket, sourceKey)
-	if err != nil {
-		if errors.Is(err, client.ErrBucketNotFound) {
-			model.WriteErrorResponse(w, r, model.ErrNoSuchBucket)
-			return
-		}
-		if errors.Is(err, client.ErrObjectNotFound) {
-			model.WriteErrorResponse(w, r, model.ErrNoSuchKey)
-			return
-		}
-		model.WriteErrorResponse(w, r, model.ErrInternalError)
+	if s.handleObjectError(w, r, err) {
 		return
 	}
 
@@ -114,12 +123,7 @@ func (s *S3Gateway) CopyObject(w http.ResponseWriter, r *http.Request) {
 
 	// Put object at destination
 	destInfo, err := s.client.PutObject(destBucket, destKey, contentType, metadata, sourceData)
-	if err != nil {
-		if errors.Is(err, client.ErrBucketNotFound) {
-			model.WriteErrorResponse(w, r, model.ErrNoSuchBucket)
-			return
-		}
-		model.WriteErrorResponse(w, r, model.ErrInternalError)
+	if s.handleObjectError(w, r, err) {
 		return
 	}
 
@@ -138,16 +142,7 @@ func (s *S3Gateway) DeleteObject(w http.ResponseWriter, r *http.Request) {
 	key := mux.Vars(r)["key"]
 
 	err := s.client.DeleteObject(bucket, key)
-	if err != nil {
-		if errors.Is(err, client.ErrBucketNotFound) {
-			model.WriteErrorResponse(w, r, model.ErrNoSuchBucket)
-			return
-		}
-		if errors.Is(err, client.ErrObjectNotFound) {
-			model.WriteErrorResponse(w, r, model.ErrNoSuchKey)
-			return
-		}
-		model.WriteErrorResponse(w, r, model.ErrInternalError)
+	if s.handleObjectError(w, r, err) {
 		return
 	}
 
@@ -223,16 +218,7 @@ func (s *S3Gateway) Download(w http.ResponseWriter, r *http.Request) {
 	}
 
 	info, data, err := s.client.GetObject(bucket, key)
-	if err != nil {
-		if errors.Is(err, client.ErrBucketNotFound) {
-			model.WriteErrorResponse(w, r, model.ErrNoSuchBucket)
-			return
-		}
-		if errors.Is(err, client.ErrObjectNotFound) {
-			model.WriteErrorResponse(w, r, model.ErrNoSuchKey)
-			return
-		}
-		model.WriteErrorResponse(w, r, model.ErrInternalError)
+	if s.handleObjectError(w, r, err) {
 		return
 	}
 
@@ -290,17 +276,10 @@ func (s *S3Gateway) GetObjectRetention(w http.ResponseWriter, r *http.Request) {
 
 	mode, retainUntilDate, err := s.client.GetObjectRetention(bucket, key)
 	if err != nil {
-		if errors.Is(err, client.ErrBucketNotFound) {
-			model.WriteErrorResponse(w, r, model.ErrNoSuchBucket)
-			return
-		}
-		if errors.Is(err, client.ErrObjectNotFound) {
-			// No retention configuration exists
-			model.WriteErrorResponse(w, r, model.ErrNoSuchKey)
+		if s.handleObjectError(w, r, err) {
 			return
 		}
 		log.Printf("Error getting object retention: %v", err)
-		model.WriteErrorResponse(w, r, model.ErrInternalError)
 		return
 	}
 
@@ -318,17 +297,7 @@ func (s *S3Gateway) HeadObject(w http.ResponseWriter, r *http.Request) {
 	key := mux.Vars(r)["key"]
 
 	res, err := s.client.GetObjectInfo(bucket, key)
-	if err != nil {
-		if errors.Is(err, client.ErrBucketNotFound) {
-			model.WriteErrorResponse(w, r, model.ErrNoSuchBucket)
-			return
-		}
-		if errors.Is(err, client.ErrObjectNotFound) {
-			model.WriteErrorResponse(w, r, model.ErrNoSuchKey)
-			return
-		}
-
-		http.Error(w, "Object not found in the bucket", http.StatusNotFound)
+	if s.handleObjectError(w, r, err) {
 		return
 	}
 
@@ -357,7 +326,17 @@ func (s *S3Gateway) ListObjects(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if errors.Is(err, client.ErrObjectNotFound) {
-			model.WriteEmptyResponse(w, r, http.StatusOK)
+			xmlResponse := ListBucketResult{
+				IsTruncated:    false,
+				Contents:       []s3.Object{},
+				Name:           bucket,
+				Prefix:         prefix,
+				Delimiter:      delimiter,
+				MaxKeys:        1000,
+				CommonPrefixes: []PrefixEntry{},
+			}
+
+			model.WriteXMLResponse(w, r, http.StatusOK, xmlResponse)
 			return
 		}
 
@@ -442,16 +421,10 @@ func (s *S3Gateway) UpdateObjectRetention(w http.ResponseWriter, r *http.Request
 	// Set retention in NATS object metadata
 	err = s.client.PutObjectRetention(bucket, key, mode, retainUntilDate)
 	if err != nil {
-		if errors.Is(err, client.ErrBucketNotFound) {
-			model.WriteErrorResponse(w, r, model.ErrNoSuchBucket)
-			return
-		}
-		if errors.Is(err, client.ErrObjectNotFound) {
-			model.WriteErrorResponse(w, r, model.ErrNoSuchKey)
+		if s.handleObjectError(w, r, err) {
 			return
 		}
 		log.Printf("Error setting object retention: %v", err)
-		model.WriteErrorResponse(w, r, model.ErrInternalError)
 		return
 	}
 

@@ -174,7 +174,7 @@ func (s *S3Gateway) RegisterRoutes(router *mux.Router) {
 	// These routes have neither .Path() nor .Queries()
 	// Must be registered last
 	bucket.Methods(http.MethodPut).HandlerFunc(s.iam.Auth(s.CreateBucket))
-	bucket.Methods(http.MethodHead).HandlerFunc(s.iam.Auth(s.notImplemented))
+	bucket.Methods(http.MethodHead).HandlerFunc(s.iam.Auth(s.HeadBucket))
 	bucket.Methods(http.MethodGet).HandlerFunc(s.iam.Auth(s.ListObjects))
 	bucket.Methods(http.MethodDelete).HandlerFunc(s.iam.Auth(s.DeleteBucket))
 	bucket.Methods(http.MethodOptions).HandlerFunc(s.iam.Auth(s.notImplemented))
