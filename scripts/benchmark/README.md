@@ -49,7 +49,7 @@ The script requires a `credentials.json` file in the same directory. A sample fi
 The benchmark script performs the following steps:
 
 1. **Starts NATS Server** - Launches a local NATS server with JetStream enabled
-2. **Starts NATS-S3 Gateway** - Runs the NATS-S3 gateway in a Docker container, connected to the NATS server
+2. **Starts NATS-S3 Gateway** - Pulls & runs the latest NATS-S3 gateway in a Docker container, connected to the NATS server
 3. **Runs Benchmark** - Executes MinIO's `warp` tool with a mixed workload:
    - Duration: 20 seconds
    - Object size: 1MB
