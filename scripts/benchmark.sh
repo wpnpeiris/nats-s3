@@ -7,7 +7,8 @@
 # runs a benchmark using the 'warp' tool, and ensures cleanup
 # of all resources upon completion or interruption.
 #
-# This scripts assumes that Docker and NATS server are installed
+# This scripts assumes that Docker, NATS server
+# and warp (https://github.com/minio/warp) are installed
 # and available in the system's PATH.
 #
 # Also, ensure that you have a valid 'credentials.json' file in your working directory.
