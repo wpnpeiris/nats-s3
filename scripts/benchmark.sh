@@ -67,6 +67,16 @@ echo "NATS-S3 gateway started with container ID: $NATS_S3_CONTAINER_ID"
 sleep 3
 
 echo "Running benchmark..."
-warp mixed --host=localhost:5222 --access-key=testtest --secret-key=testtest --duration 20s --obj.size 1M --concurrent=1 --objects=10 --get-distrib 1 --stat-distrib 1 --put-distrib 2 --delete-distrib 1
+warp mixed --host=localhost:5222 \
+    --access-key=testtest \
+    --secret-key=testtest \
+    --duration 20s \
+    --obj.size 1M \
+    --concurrent=1 \
+    --objects=10 \
+    --get-distrib 1 \
+    --stat-distrib 1 \
+    --put-distrib 2 \
+    --delete-distrib 1
 
 echo "Benchmark completed successfully!"
