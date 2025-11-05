@@ -47,6 +47,9 @@ cleanup() {
 # Register cleanup function to run on script exit
 trap cleanup EXIT INT TERM
 
+echo "Pulling latest NATS-S3 gateway Docker image..."
+docker pull wpnpeiris/nats-s3:latest
+
 echo "Starting NATS server..."
 nats-server -js &
 NATS_PID=$!
@@ -58,7 +61,7 @@ sleep 2
 echo "Starting NATS-S3 gateway..."
 NATS_S3_CONTAINER_ID=$(docker run -d --network host -p 5222:5222 \
   -v $(pwd)/credentials.json:/credentials.json \
-  wpnpeiris/nats-s3:v0.3.8 \
+  wpnpeiris/nats-s3:latest \
   --listen 0.0.0.0:5222 \
   --natsServers nats://127.0.0.1:4222 \
   --s3.credentials /credentials.json)
