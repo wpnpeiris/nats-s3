@@ -2,6 +2,7 @@ package client
 
 import (
 	"crypto/md5"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -544,7 +545,11 @@ func (m *MultiPartStore) deleteAllPartMeta(bucket, key, uploadID string) error {
 
 // metaKey builds the KV key used to persist state for a multipart upload.
 func metaKey(bucket, key, uploadID string) string {
-	return fmt.Sprintf("multi_parts/%s/%s/%s", bucket, key, uploadID)
+	enc := base64.RawURLEncoding
+	return fmt.Sprintf("mp.%s.%s.%s",
+		enc.EncodeToString([]byte(bucket)),
+		enc.EncodeToString([]byte(key)),
+		enc.EncodeToString([]byte(uploadID)))
 }
 
 // partKey constructs the Object Store key for a specific uploaded part
@@ -554,10 +559,19 @@ func partKey(bucket, key, uploadID string, part int) string {
 
 // partMetaKey builds the KV key for a single part's metadata.
 func partMetaKey(bucket, key, uploadID string, part int) string {
-	return fmt.Sprintf("multi_parts/%s/%s/%s/parts/%06d", bucket, key, uploadID, part)
+	enc := base64.RawURLEncoding
+	return fmt.Sprintf("pm.%s.%s.%s.%06d",
+		enc.EncodeToString([]byte(bucket)),
+		enc.EncodeToString([]byte(key)),
+		enc.EncodeToString([]byte(uploadID)),
+		part)
 }
 
 // partMetaPrefix returns the KV key prefix for all parts of an upload metadata.
 func partMetaPrefix(bucket, key, uploadID string) string {
-	return fmt.Sprintf("multi_parts/%s/%s/%s/parts/", bucket, key, uploadID)
+	enc := base64.RawURLEncoding
+	return fmt.Sprintf("pm.%s.%s.%s.",
+		enc.EncodeToString([]byte(bucket)),
+		enc.EncodeToString([]byte(key)),
+		enc.EncodeToString([]byte(uploadID)))
 }

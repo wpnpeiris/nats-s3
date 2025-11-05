@@ -20,6 +20,12 @@ type BucketsResult struct {
 	Buckets []*s3.Bucket `xml:"Buckets>Bucket"`
 }
 
+// LocationConstraintResponse is the XML response for GetBucketLocation.
+type LocationConstraintResponse struct {
+	XMLName  xml.Name `xml:"http://s3.amazonaws.com/doc/2006-03-01/ LocationConstraint"`
+	Location string   `xml:",chardata"`
+}
+
 // CreateBucket handles S3 CreateBucket by creating a JetStream Object Store
 // bucket and returning a minimal S3-compatible XML response.
 func (s *S3Gateway) CreateBucket(w http.ResponseWriter, r *http.Request) {
@@ -107,4 +113,59 @@ func (s *S3Gateway) ListBuckets(w http.ResponseWriter, r *http.Request) {
 	}
 
 	model.WriteXMLResponse(w, r, http.StatusOK, response)
+}
+
+// HeadBucket checks if a bucket exists and the user has permission to access it.
+// Returns 200 OK if bucket exists, 404 if not found.
+func (s *S3Gateway) HeadBucket(w http.ResponseWriter, r *http.Request) {
+	bucket := mux.Vars(r)["bucket"]
+
+	err := s.bucketExists(bucket)
+	if err != nil {
+		if errors.Is(err, client.ErrBucketNotFound) {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+}
+
+// GetBucketLocation returns the region where the bucket resides.
+func (s *S3Gateway) GetBucketLocation(w http.ResponseWriter, r *http.Request) {
+	bucket := mux.Vars(r)["bucket"]
+
+	err := s.bucketExists(bucket)
+	if err != nil {
+		if errors.Is(err, client.ErrBucketNotFound) {
+			model.WriteErrorResponse(w, r, model.ErrNoSuchBucket)
+			return
+		}
+		model.WriteErrorResponse(w, r, model.ErrInternalError)
+		return
+	}
+
+	// Return empty location constraint for default location
+	response := LocationConstraintResponse{
+		Location: "",
+	}
+
+	model.WriteXMLResponse(w, r, http.StatusOK, response)
+}
+
+// bucketExists checks if a bucket exists by attempting to list objects.
+func (s *S3Gateway) bucketExists(bucket string) error {
+	_, err := s.client.ListObjects(bucket)
+	if err != nil {
+		if errors.Is(err, client.ErrBucketNotFound) {
+			return client.ErrBucketNotFound
+		}
+		if errors.Is(err, client.ErrObjectNotFound) {
+			return nil
+		}
+		return err
+	}
+	return nil
 }

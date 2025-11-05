@@ -60,7 +60,7 @@ func NewGatewayServer(logger log.Logger,
 
 // Start starts the HTTP server with the provided configuration and blocks until it exits.
 func (s *GatewayServer) Start(cfg Config) error {
-	router := mux.NewRouter()
+	router := mux.NewRouter().SkipClean(true)
 
 	metrics.RegisterMetricEndpoint(router)
 	s.s3Gateway.RegisterRoutes(router)
