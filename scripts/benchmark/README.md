@@ -10,29 +10,6 @@ Before running the benchmark script, ensure you have the following installed:
 2. **NATS Server** - The `nats-server` binary must be available in your system PATH
 3. **MinIO Warp** - Install from https://github.com/minio/warp
 
-### Installing NATS Server
-
-```bash
-# On macOS
-brew install nats-server
-
-# On Linux
-curl -L https://github.com/nats-io/nats-server/releases/latest/download/nats-server-latest-linux-amd64.tar.gz | tar xz
-sudo mv nats-server-*/nats-server /usr/local/bin/
-```
-
-### Installing MinIO Warp
-
-```bash
-# On macOS
-brew install minio/stable/warp
-
-# On Linux
-wget https://github.com/minio/warp/releases/latest/download/warp_Linux_x86_64.tar.gz
-tar xzf warp_Linux_x86_64.tar.gz
-sudo mv warp /usr/local/bin/
-```
-
 ## Configuration
 
 The script requires a `credentials.json` file in the same directory. A sample file is already provided with the following structure:
