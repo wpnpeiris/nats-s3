@@ -152,11 +152,11 @@ Run
 Flags
 - `--listen`: HTTP bind address for the S3 gateway (default `0.0.0.0:5222`).
 - `--natsServers`: Comma‑separated NATS server URLs (default from `nats.DefaultURL`).
-- `--natsUser`, `--natsPassword`: Optional NATS credentials for connecting to NATS server.
-- `--natsToken`: NATS server token for token-based authentication.
-- `--natsNKeyFile`: NATS server NKey seed file path for NKey authentication.
-- `--natsCredsFile`: NATS server credentials file path for JWT authentication.
-- `--natsReplicas`: Number of NATS replicas for each jetstream element (default 1).
+- `--user`, `--password`: Optional NATS credentials for connecting to NATS server.
+- `--token`: NATS server token for token-based authentication.
+- `--nkeyFile`: NATS server NKey seed file path for NKey authentication.
+- `--credsFile`: NATS server credentials file path for JWT authentication.
+- `--replicas`: Number of NATS replicas for each jetstream element (default 1).
 - `--s3.credentials`: Path to S3 credentials file (JSON format, required).
 - `--log.format`: Log output format: logfmt or json (default logfmt).
 - `--log.level`: Log level: debug, info, warn, error (default info).
@@ -310,7 +310,7 @@ aws s3 ls --endpoint-url=http://localhost:5222
 - Both header-based SigV4 and presigned URLs (query-string SigV4) are supported.
 - Time skew of ±5 minutes is allowed; presigned URLs honor X-Amz-Expires.
 - Multiple users can share the same gateway, each with their own credentials.
-- NATS server authentication (`--natsUser`/`--natsPassword`) is independent from S3 credentials.
+- NATS server authentication (`--user`/`--password`) is independent from S3 credentials.
 
 ## Roadmap & Contributing
 - See [ROADMAP.md](ROADMAP.md) for planned milestones.

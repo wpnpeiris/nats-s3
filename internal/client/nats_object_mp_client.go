@@ -43,6 +43,7 @@ type UploadMeta struct {
 	Parts     map[int]PartMeta `json:"-"`               // Not persisted, populated on-demand
 }
 
+// MultiPartStoreOptions holds configuration options for MultiPartStore.
 type MultiPartStoreOptions struct {
 	Replicas int
 }
@@ -58,14 +59,7 @@ type MultiPartStore struct {
 	partObjectStore nats.ObjectStore
 }
 
-func NewMultiPartStore(logger log.Logger,
-	c *Client,
-	opts MultiPartStoreOptions) (*MultiPartStore, error) {
-	if opts.Replicas < 1 {
-		logging.Info(logger, "msg", fmt.Sprintf("Invalid replicas count, defaulting to 1: [%d]", opts.Replicas))
-		opts.Replicas = 1
-	}
-
+func NewMultiPartStore(logger log.Logger, c *Client) (*MultiPartStore, error) {
 	nc := c.NATS()
 	js, err := nc.JetStream()
 	if err != nil {
@@ -76,8 +70,7 @@ func NewMultiPartStore(logger log.Logger,
 	if err != nil {
 		if errors.Is(err, nats.ErrBucketNotFound) {
 			metaKV, err = js.CreateKeyValue(&nats.KeyValueConfig{
-				Bucket:   MetaStoreName,
-				Replicas: opts.Replicas,
+				Bucket: MetaStoreName,
 			})
 			if err != nil {
 				return nil, fmt.Errorf("failed to create multipart meta store when calling js.CreateKeyValue(): %w", err)
@@ -91,8 +84,7 @@ func NewMultiPartStore(logger log.Logger,
 	if err != nil {
 		if errors.Is(err, nats.ErrBucketNotFound) {
 			partMetaKV, err = js.CreateKeyValue(&nats.KeyValueConfig{
-				Bucket:   PartMetaStoreName,
-				Replicas: opts.Replicas,
+				Bucket: PartMetaStoreName,
 			})
 			if err != nil {
 				return nil, fmt.Errorf("failed to create multipart part-meta store when calling js.CreateKeyValue(): %w", err)
@@ -106,8 +98,7 @@ func NewMultiPartStore(logger log.Logger,
 	if err != nil {
 		if errors.Is(err, nats.ErrStreamNotFound) {
 			partOS, err = js.CreateObjectStore(&nats.ObjectStoreConfig{
-				Bucket:   TempStoreName,
-				Replicas: opts.Replicas,
+				Bucket: TempStoreName,
 			})
 			if err != nil {
 				return nil, fmt.Errorf("failed to create multipart temp store when calling js.CreateObjectStore(): %w", err)
