@@ -34,7 +34,7 @@ func NewNatsObjectClient(logger log.Logger,
 	opts NatsObjectClientOptions) (*NatsObjectClient, error) {
 
 	if opts.Replicas < 1 {
-		logging.Info(logger, "msg", fmt.Sprintf("Invalid replicas given. Will default to 1: %d", opts.Replicas))
+		logging.Warn(logger, "msg", fmt.Sprintf("Invalid replicas given. Will default to 1: %d", opts.Replicas))
 		opts.Replicas = 1
 	}
 

@@ -16,10 +16,6 @@ import (
 	"github.com/wpnpeiris/nats-s3/internal/validation"
 )
 
-type S3GatewayOptions struct {
-	Replicas int
-}
-
 // S3Gateway registers S3-compatible HTTP routes (2006-03-01) and delegates
 // implemented operations to NATS JetStream-backed object storage.
 // Unimplemented endpoints intentionally respond with HTTP 501 Not Implemented.
@@ -35,14 +31,9 @@ type S3Gateway struct {
 // NATS using the given servers and connection options. Returns an error if initialization fails.
 func NewS3Gateway(logger log.Logger,
 	natsServers string,
+	replicas int,
 	natsOptions []nats.Option,
-	credStore credential.Store,
-	opts S3GatewayOptions) (*S3Gateway, error) {
-
-	if opts.Replicas < 1 {
-		logging.Info(logger, "msg", fmt.Sprintf("Invalid replicas count, defaulting to 1: [%d]", opts.Replicas))
-		opts.Replicas = 1
-	}
+	credStore credential.Store) (*S3Gateway, error) {
 
 	natsClient := client.NewClient("s3-gateway")
 	err := natsClient.SetupConnectionToNATS(natsServers, natsOptions...)
@@ -53,17 +44,13 @@ func NewS3Gateway(logger log.Logger,
 	oc, err := client.NewNatsObjectClient(logger,
 		natsClient,
 		client.NatsObjectClientOptions{
-			Replicas: opts.Replicas,
+			Replicas: replicas,
 		})
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize NATS object client: %w", err)
 	}
 
-	mps, err := client.NewMultiPartStore(logger,
-		natsClient,
-		client.MultiPartStoreOptions{
-			Replicas: opts.Replicas,
-		})
+	mps, err := client.NewMultiPartStore(logger, natsClient)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize multipart store: %w", err)
 	}

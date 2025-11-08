@@ -156,7 +156,7 @@ Flags
 - `--natsToken`: NATS server token for token-based authentication.
 - `--natsNKeyFile`: NATS server NKey seed file path for NKey authentication.
 - `--natsCredsFile`: NATS server credentials file path for JWT authentication.
-- `--natsReplicas`: Number of NATS replicas for each jetstream element (default 1).
+- `--replicas`: Number of NATS replicas for each jetstream element (default 1).
 - `--s3.credentials`: Path to S3 credentials file (JSON format, required).
 - `--log.format`: Log output format: logfmt or json (default logfmt).
 - `--log.level`: Log level: debug, info, warn, error (default info).

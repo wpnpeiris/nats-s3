@@ -17,7 +17,7 @@ func TestListBuckets(t *testing.T) {
 	defer s.Shutdown()
 
 	logger := logging.NewLogger(logging.Config{Level: "debug"})
-	gw, err := NewS3Gateway(logger, s.ClientURL(), nil, nil, S3GatewayOptions{})
+	gw, err := NewS3Gateway(logger, s.ClientURL(), 1, nil, nil)
 	if err != nil {
 		t.Fatalf("failed to create S3 gateway: %v", err)
 	}
@@ -76,7 +76,7 @@ func TestCreateBucket(t *testing.T) {
 	defer s.Shutdown()
 
 	logger := logging.NewLogger(logging.Config{Level: "debug"})
-	gw, err := NewS3Gateway(logger, s.ClientURL(), nil, nil, S3GatewayOptions{})
+	gw, err := NewS3Gateway(logger, s.ClientURL(), 1, nil, nil)
 	if err != nil {
 		t.Fatalf("failed to create S3 gateway: %v", err)
 	}
@@ -112,7 +112,7 @@ func TestCreateBucketDuplicateFails(t *testing.T) {
 	defer s.Shutdown()
 
 	logger := logging.NewLogger(logging.Config{Level: "debug"})
-	gw, err := NewS3Gateway(logger, s.ClientURL(), nil, nil, S3GatewayOptions{})
+	gw, err := NewS3Gateway(logger, s.ClientURL(), 1, nil, nil)
 	if err != nil {
 		t.Fatalf("failed to create S3 gateway: %v", err)
 	}
@@ -147,9 +147,7 @@ func TestCreateBucket_Replicated(t *testing.T) {
 	s := servers[0]
 
 	logger := logging.NewLogger(logging.Config{Level: "debug"})
-	gw, err := NewS3Gateway(logger, s.ClientURL(), nil, nil, S3GatewayOptions{
-		Replicas: 3,
-	})
+	gw, err := NewS3Gateway(logger, s.ClientURL(), 3, nil, nil)
 	if err != nil {
 		t.Fatalf("failed to create S3 gateway: %v", err)
 	}
