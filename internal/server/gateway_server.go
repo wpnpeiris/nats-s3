@@ -70,7 +70,6 @@ func NewGatewayServer(opts *Options) (*GatewayServer, error) {
 }
 
 // initializeCredentialStore loads the S3 credentials from the configured file path.
-// It exits with status code 1 if the credentials file is missing or invalid.
 func initializeCredentialStore(logger log.Logger, opts *Options) *credential.StaticFileStore {
 	credentialsFile := opts.CredentialsFile
 	if credentialsFile == "" {
@@ -88,7 +87,6 @@ func initializeCredentialStore(logger log.Logger, opts *Options) *credential.Sta
 }
 
 // loadNatsOptions builds NATS connection options based on the configured authentication type.
-// It exits with status code 1 if NKey file loading fails.
 func loadNatsOptions(logger log.Logger, opts *Options) []nats.Option {
 	var natsOptions []nats.Option
 

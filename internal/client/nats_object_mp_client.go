@@ -43,11 +43,6 @@ type UploadMeta struct {
 	Parts     map[int]PartMeta `json:"-"`               // Not persisted, populated on-demand
 }
 
-// MultiPartStoreOptions holds configuration options for MultiPartStore.
-type MultiPartStoreOptions struct {
-	Replicas int
-}
-
 // MultiPartStore groups storage backends used for multipart uploads.
 // metaStore tracks session metadata in a Key-Value bucket, while
 // tempPartStore holds uploaded parts in a temporary Object Store.
