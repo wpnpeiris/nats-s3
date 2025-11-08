@@ -20,11 +20,11 @@ NATS Object Store Options:
     --replicas <N>               Number of replicas for each JetStream element (default: 1)
 
 NATS Authentication Options (choose one):
-    --user <user>                NATS server username (basic auth)
-    --password <pass>            NATS server password (basic auth)
-    --token <token>              NATS server token (token-based auth)
-    --nkeyFile <path>            NATS server NKey seed file path (NKey auth)
-    --credsFile <path>           NATS server credentials file path (JWT auth)
+    --natsUser <user>            NATS server username (basic auth)
+    --natsPassword <pass>        NATS server password (basic auth)
+    --natsToken <token>          NATS server token (token-based auth)
+    --natsNKeyFile <path>        NATS server NKey seed file path (NKey auth)
+    --natsCredsFile <path>       NATS server credentials file path (JWT auth)
 
 S3 Options:
     --s3.credentials <path>          Path to S3 credentials file (JSON format, required)
@@ -49,7 +49,7 @@ Examples:
 
     # Start with NATS authentication
     nats-s3 --natsServers nats://127.0.0.1:4222 \
-            --user admin --password secret \
+            --natsUser admin --natsPassword secret \
             --s3.credentials credentials.json
 
     # Start with custom listen address and debug logging
