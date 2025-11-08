@@ -145,16 +145,8 @@ func (m *MultiPartStore) UploadPart(ctx context.Context, bucket string, key stri
 	}()
 
 	// Cancel the upload if the context is done
-	done := make(chan struct{})
+	done := watchContextCancellation(ctx, pr)
 	defer close(done) // Ensure goroutine cleanup on all exit paths
-	go func() {
-		select {
-		case <-ctx.Done():
-			_ = pr.CloseWithError(ctx.Err())
-		case <-done:
-			return
-		}
-	}()
 
 	partKey := partKey(bucket, key, uploadID, part)
 	obj, err := m.savePartData(partKey, pr)
@@ -317,16 +309,8 @@ func (m *MultiPartStore) CompleteMultipartUpload(ctx context.Context, bucket str
 	}()
 
 	// Cancel the composition if request context is done
-	done := make(chan struct{})
+	done := watchContextCancellation(ctx, pr)
 	defer close(done) // Ensure goroutine cleanup on all exit paths
-	go func() {
-		select {
-		case <-ctx.Done():
-			_ = pr.CloseWithError(ctx.Err())
-		case <-done:
-			return
-		}
-	}()
 
 	nc := m.client.NATS()
 	js, err := nc.JetStream()
@@ -585,4 +569,19 @@ func partMetaPrefix(bucket, key, uploadID string) string {
 		enc.EncodeToString([]byte(bucket)),
 		enc.EncodeToString([]byte(key)),
 		enc.EncodeToString([]byte(uploadID)))
+}
+
+// watchContextCancellation monitors the given context and closes the PipeReader
+// when the context is canceled,
+func watchContextCancellation(ctx context.Context, pr *io.PipeReader) chan struct{} {
+	done := make(chan struct{})
+	go func() {
+		select {
+		case <-ctx.Done():
+			_ = pr.CloseWithError(ctx.Err())
+		case <-done:
+			return
+		}
+	}()
+	return done
 }

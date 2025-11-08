@@ -2,6 +2,7 @@ package client
 
 import (
 	"bytes"
+	"context"
 	"testing"
 	"time"
 
@@ -47,7 +48,7 @@ func TestNatsObjectClient_BasicCRUD(t *testing.T) {
 	}
 
 	// Put
-	info, err := oc.PutObject(bucket, key, "text/plain", map[string]string{"k": "v"}, data)
+	info, err := oc.PutObjectStream(context.Background(), bucket, key, "text/plain", map[string]string{"k": "v"}, bytes.NewReader(data))
 	if err != nil {
 		t.Fatalf("PutObject failed: %v", err)
 	}

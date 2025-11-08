@@ -122,13 +122,6 @@ func (s *S3Gateway) CopyObject(w http.ResponseWriter, r *http.Request) {
 
 // DeleteObject deletes the specified object and responds with 204 No Content.
 func (s *S3Gateway) DeleteObject(w http.ResponseWriter, r *http.Request) {
-	// Check if request already canceled
-	select {
-	case <-r.Context().Done():
-		return
-	default:
-	}
-
 	bucket := mux.Vars(r)["bucket"]
 	key := mux.Vars(r)["key"]
 
