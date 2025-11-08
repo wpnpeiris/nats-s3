@@ -2,10 +2,11 @@ package client
 
 import (
 	"bytes"
-	"github.com/wpnpeiris/nats-s3/internal/logging"
-	"github.com/wpnpeiris/nats-s3/internal/testutil"
 	"testing"
 	"time"
+
+	"github.com/wpnpeiris/nats-s3/internal/logging"
+	"github.com/wpnpeiris/nats-s3/internal/testutil"
 
 	"github.com/nats-io/nats.go"
 )
@@ -40,7 +41,7 @@ func TestNatsObjectClient_BasicCRUD(t *testing.T) {
 	}
 
 	logger := logging.NewLogger(logging.Config{Level: "debug"})
-	oc, err := NewNatsObjectClient(logger, c)
+	oc, err := NewNatsObjectClient(logger, c, NatsObjectClientOptions{})
 	if err != nil {
 		t.Fatalf("NewNatsObjectClient failed: %v", err)
 	}

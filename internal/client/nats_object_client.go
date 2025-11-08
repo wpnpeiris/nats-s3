@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+
 	"github.com/go-kit/log"
 	"github.com/nats-io/nats.go"
 	"github.com/wpnpeiris/nats-s3/internal/logging"
@@ -16,17 +17,31 @@ var ErrUploadCompleted = errors.New("completed multipart upload")
 var ErrMissingPart = errors.New("missing part")
 var ErrBucketAlreadyExists = errors.New("bucket already exists")
 
+type NatsObjectClientOptions struct {
+	Replicas int
+}
+
 // NatsObjectClient provides convenience helpers for common NATS JetStream
 // Object Store operations, built on top of the base Client connection.
 type NatsObjectClient struct {
 	logger log.Logger
 	client *Client
+	opts   NatsObjectClientOptions
 }
 
-func NewNatsObjectClient(logger log.Logger, natsClient *Client) (*NatsObjectClient, error) {
+func NewNatsObjectClient(logger log.Logger,
+	natsClient *Client,
+	opts NatsObjectClientOptions) (*NatsObjectClient, error) {
+
+	if opts.Replicas < 1 {
+		logging.Info(logger, "msg", fmt.Sprintf("Invalid replicas given. Will default to 1: %d", opts.Replicas))
+		opts.Replicas = 1
+	}
+
 	return &NatsObjectClient{
 		logger: logger,
 		client: natsClient,
+		opts:   opts,
 	}, nil
 }
 
@@ -63,8 +78,9 @@ func (c *NatsObjectClient) CreateBucket(bucketName string) (nats.ObjectStoreStat
 	}
 
 	os, err := js.CreateObjectStore(&nats.ObjectStoreConfig{
-		Bucket:  bucketName,
-		Storage: nats.FileStorage,
+		Bucket:   bucketName,
+		Storage:  nats.FileStorage,
+		Replicas: c.opts.Replicas,
 	})
 	if err != nil {
 		logging.Error(c.logger, "msg", "Error at CreateObjectStore", "err", err)

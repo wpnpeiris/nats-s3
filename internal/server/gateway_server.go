@@ -14,6 +14,10 @@ import (
 	"github.com/wpnpeiris/nats-s3/internal/s3api"
 )
 
+type GatewayServerOptions struct {
+	NATSReplicas int
+}
+
 // Config holds HTTP server configuration options.
 type Config struct {
 	Endpoint          string
@@ -30,8 +34,24 @@ type GatewayServer struct {
 
 // NewGatewayServer constructs a server that exposes the S3 API backed by NATS.
 // Returns an error if initialization fails (e.g., cannot connect to NATS).
-func NewGatewayServer(logger log.Logger, natsServers string, natsOptions []nats.Option, credStore credential.Store) (*GatewayServer, error) {
-	s3Gateway, err := s3api.NewS3Gateway(logger, natsServers, natsOptions, credStore)
+func NewGatewayServer(logger log.Logger,
+	natsServers string,
+	natsOptions []nats.Option,
+	credStore credential.Store,
+	opts GatewayServerOptions) (*GatewayServer, error) {
+
+	if opts.NATSReplicas < 1 {
+		logging.Info(logger, "msg", fmt.Sprintf("Invalid NATS replicas count, defaulting to 1: [%d]", opts.NATSReplicas))
+		opts.NATSReplicas = 1
+	}
+
+	s3Gateway, err := s3api.NewS3Gateway(logger,
+		natsServers,
+		natsOptions,
+		credStore,
+		s3api.S3GatewayOptions{
+			Replicas: opts.NATSReplicas,
+		})
 	if err != nil {
 		return nil, err
 	}

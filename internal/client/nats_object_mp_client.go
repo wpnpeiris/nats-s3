@@ -7,12 +7,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/go-kit/log"
-	"github.com/nats-io/nats.go"
-	"github.com/wpnpeiris/nats-s3/internal/logging"
 	"io"
 	"strings"
 	"time"
+
+	"github.com/go-kit/log"
+	"github.com/nats-io/nats.go"
+	"github.com/wpnpeiris/nats-s3/internal/logging"
 )
 
 // PartMeta describes a single part in a multipart upload.
@@ -42,6 +43,10 @@ type UploadMeta struct {
 	Parts     map[int]PartMeta `json:"-"`               // Not persisted, populated on-demand
 }
 
+type MultiPartStoreOptions struct {
+	Replicas int
+}
+
 // MultiPartStore groups storage backends used for multipart uploads.
 // metaStore tracks session metadata in a Key-Value bucket, while
 // tempPartStore holds uploaded parts in a temporary Object Store.
@@ -53,7 +58,14 @@ type MultiPartStore struct {
 	partObjectStore nats.ObjectStore
 }
 
-func NewMultiPartStore(logger log.Logger, c *Client) (*MultiPartStore, error) {
+func NewMultiPartStore(logger log.Logger,
+	c *Client,
+	opts MultiPartStoreOptions) (*MultiPartStore, error) {
+	if opts.Replicas < 1 {
+		logging.Info(logger, "msg", fmt.Sprintf("Invalid replicas count, defaulting to 1: [%d]", opts.Replicas))
+		opts.Replicas = 1
+	}
+
 	nc := c.NATS()
 	js, err := nc.JetStream()
 	if err != nil {
@@ -64,7 +76,8 @@ func NewMultiPartStore(logger log.Logger, c *Client) (*MultiPartStore, error) {
 	if err != nil {
 		if errors.Is(err, nats.ErrBucketNotFound) {
 			metaKV, err = js.CreateKeyValue(&nats.KeyValueConfig{
-				Bucket: MetaStoreName,
+				Bucket:   MetaStoreName,
+				Replicas: opts.Replicas,
 			})
 			if err != nil {
 				return nil, fmt.Errorf("failed to create multipart meta store when calling js.CreateKeyValue(): %w", err)
@@ -78,7 +91,8 @@ func NewMultiPartStore(logger log.Logger, c *Client) (*MultiPartStore, error) {
 	if err != nil {
 		if errors.Is(err, nats.ErrBucketNotFound) {
 			partMetaKV, err = js.CreateKeyValue(&nats.KeyValueConfig{
-				Bucket: PartMetaStoreName,
+				Bucket:   PartMetaStoreName,
+				Replicas: opts.Replicas,
 			})
 			if err != nil {
 				return nil, fmt.Errorf("failed to create multipart part-meta store when calling js.CreateKeyValue(): %w", err)
@@ -92,7 +106,8 @@ func NewMultiPartStore(logger log.Logger, c *Client) (*MultiPartStore, error) {
 	if err != nil {
 		if errors.Is(err, nats.ErrStreamNotFound) {
 			partOS, err = js.CreateObjectStore(&nats.ObjectStoreConfig{
-				Bucket: TempStoreName,
+				Bucket:   TempStoreName,
+				Replicas: opts.Replicas,
 			})
 			if err != nil {
 				return nil, fmt.Errorf("failed to create multipart temp store when calling js.CreateObjectStore(): %w", err)

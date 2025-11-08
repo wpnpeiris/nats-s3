@@ -2,10 +2,11 @@ package s3api
 
 import (
 	"encoding/xml"
-	"github.com/wpnpeiris/nats-s3/internal/logging"
-	"github.com/wpnpeiris/nats-s3/internal/testutil"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/wpnpeiris/nats-s3/internal/logging"
+	"github.com/wpnpeiris/nats-s3/internal/testutil"
 
 	"github.com/gorilla/mux"
 	"github.com/nats-io/nats.go"
@@ -16,7 +17,7 @@ func TestListBuckets(t *testing.T) {
 	defer s.Shutdown()
 
 	logger := logging.NewLogger(logging.Config{Level: "debug"})
-	gw, err := NewS3Gateway(logger, s.ClientURL(), nil, nil)
+	gw, err := NewS3Gateway(logger, s.ClientURL(), nil, nil, S3GatewayOptions{})
 	if err != nil {
 		t.Fatalf("failed to create S3 gateway: %v", err)
 	}
@@ -75,7 +76,7 @@ func TestCreateBucket(t *testing.T) {
 	defer s.Shutdown()
 
 	logger := logging.NewLogger(logging.Config{Level: "debug"})
-	gw, err := NewS3Gateway(logger, s.ClientURL(), nil, nil)
+	gw, err := NewS3Gateway(logger, s.ClientURL(), nil, nil, S3GatewayOptions{})
 	if err != nil {
 		t.Fatalf("failed to create S3 gateway: %v", err)
 	}
@@ -111,7 +112,7 @@ func TestCreateBucketDuplicateFails(t *testing.T) {
 	defer s.Shutdown()
 
 	logger := logging.NewLogger(logging.Config{Level: "debug"})
-	gw, err := NewS3Gateway(logger, s.ClientURL(), nil, nil)
+	gw, err := NewS3Gateway(logger, s.ClientURL(), nil, nil, S3GatewayOptions{})
 	if err != nil {
 		t.Fatalf("failed to create S3 gateway: %v", err)
 	}
@@ -135,5 +136,60 @@ func TestCreateBucketDuplicateFails(t *testing.T) {
 	r.ServeHTTP(rr2, req2)
 	if rr2.Code != 409 {
 		t.Fatalf("expected 409 on duplicate create, got %d body=%s", rr2.Code, rr2.Body.String())
+	}
+}
+
+func TestCreateBucket_Replicated(t *testing.T) {
+	servers := testutil.StartJSServerCluster(t)
+	for _, s := range servers {
+		defer s.Shutdown()
+	}
+	s := servers[0]
+
+	logger := logging.NewLogger(logging.Config{Level: "debug"})
+	gw, err := NewS3Gateway(logger, s.ClientURL(), nil, nil, S3GatewayOptions{
+		Replicas: 3,
+	})
+	if err != nil {
+		t.Fatalf("failed to create S3 gateway: %v", err)
+	}
+
+	r := mux.NewRouter()
+	gw.RegisterRoutes(r)
+
+	bucket := "created-bucket"
+	req := httptest.NewRequest("PUT", "/"+bucket, nil)
+	rr := httptest.NewRecorder()
+	r.ServeHTTP(rr, req)
+
+	if rr.Code != 200 {
+		t.Fatalf("unexpected status: got %d body=%s", rr.Code, rr.Body.String())
+	}
+
+	// Verify bucket exists in NATS by opening ObjectStore
+	natsEndpoint := s.Addr().String()
+	nc, err := nats.Connect(natsEndpoint)
+	if err != nil {
+		t.Fatalf("failed to connect to NATS: %v", err)
+	}
+	nc.SetClosedHandler(func(_ *nats.Conn) {})
+	defer nc.Close()
+	js, err := nc.JetStream()
+	if err != nil {
+		t.Fatalf("JetStream failed: %v", err)
+	}
+
+	objStore, err := js.ObjectStore(bucket)
+	if err != nil {
+		t.Fatalf("expected created object store %q, got error: %v", bucket, err)
+	}
+
+	objStoreStatus, err := objStore.Status()
+	if err != nil {
+		t.Fatalf("failed to get object store status: %v", err)
+	}
+
+	if objStoreStatus.Replicas() != 3 {
+		t.Errorf("Expected 3 replicas, got %d", objStoreStatus.Replicas())
 	}
 }
