@@ -764,7 +764,7 @@ func updateMetadataHeaders(obj *nats.ObjectInfo, w http.ResponseWriter) {
 }
 
 // sizeLimitReader enforces a strict size limit during streaming and returns
-// an error if the limit is exceeded. 
+// an error if the limit is exceeded.
 type sizeLimitReader struct {
 	r         io.Reader
 	limit     int64
