@@ -1,4 +1,4 @@
-package validation
+package interceptor
 
 import (
 	"github.com/gorilla/mux"

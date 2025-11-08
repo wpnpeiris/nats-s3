@@ -97,7 +97,7 @@ func (s *S3Gateway) UploadPart(w http.ResponseWriter, r *http.Request) {
 		Closer: r.Body,
 	}
 
-	etag, err := s.multiPartStore.UploadPart(bucket, key, uploadID, partNum, limitedBody)
+    etag, err := s.multiPartStore.UploadPart(r.Context(), bucket, key, uploadID, partNum, limitedBody)
 	if err != nil {
 		if errors.Is(err, client.ErrUploadNotFound) || errors.Is(err, client.ErrUploadCompleted) {
 			model.WriteErrorResponse(w, r, model.ErrNoSuchUpload)
@@ -139,9 +139,9 @@ func (s *S3Gateway) StreamUploadPart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	bodyReader := streams.NewLimitedSigV4StreamReader(r.Body, maxPartSize+1)
+    bodyReader := streams.NewLimitedSigV4StreamReader(r.Body, maxPartSize+1)
 
-	etag, err := s.multiPartStore.UploadPart(bucket, key, uploadID, partNum, bodyReader)
+    etag, err := s.multiPartStore.UploadPart(r.Context(), bucket, key, uploadID, partNum, bodyReader)
 	if err != nil {
 		if errors.Is(err, client.ErrUploadNotFound) || errors.Is(err, client.ErrUploadCompleted) {
 			model.WriteErrorResponse(w, r, model.ErrNoSuchUpload)
@@ -188,7 +188,7 @@ func (s *S3Gateway) CompleteMultipartUpload(w http.ResponseWriter, r *http.Reque
 	}
 
 	sortedPartNumbers := parsePartNumbers(parts)
-	etag, err := s.multiPartStore.CompleteMultipartUpload(bucket, key, uploadID, sortedPartNumbers)
+    etag, err := s.multiPartStore.CompleteMultipartUpload(r.Context(), bucket, key, uploadID, sortedPartNumbers)
 	if err != nil {
 		model.WriteErrorResponse(w, r, model.ErrInternalError)
 		return

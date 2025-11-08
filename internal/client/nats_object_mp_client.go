@@ -1,6 +1,7 @@
 package client
 
 import (
+	"context"
 	"crypto/md5"
 	"encoding/base64"
 	"encoding/hex"
@@ -130,7 +131,7 @@ func (m *MultiPartStore) InitMultipartUpload(bucket string, key string, uploadID
 
 // UploadPart streams a part into temporary storage and records its ETag/size
 // under the multipart session. Returns the hex ETag (without quotes).
-func (m *MultiPartStore) UploadPart(bucket string, key string, uploadID string, part int, dataReader io.ReadCloser) (string, error) {
+func (m *MultiPartStore) UploadPart(ctx context.Context, bucket string, key string, uploadID string, part int, dataReader io.ReadCloser) (string, error) {
 	logging.Info(m.logger, "msg", fmt.Sprintf("Upload part:%06d [%s/%s], UploadID: %s", part, bucket, key, uploadID))
 
 	h := md5.New()
@@ -143,13 +144,25 @@ func (m *MultiPartStore) UploadPart(bucket string, key string, uploadID string, 
 		}
 	}()
 
+	// Cancel the upload if the context is done
+	done := make(chan struct{})
+	go func() {
+		select {
+		case <-ctx.Done():
+			_ = pr.CloseWithError(ctx.Err())
+		case <-done:
+		}
+	}()
+
 	partKey := partKey(bucket, key, uploadID, part)
 	obj, err := m.savePartData(partKey, pr)
 	if err != nil {
 		// Close the reader to signal the goroutine to stop
 		_ = pr.Close()
+		close(done)
 		return "", err
 	}
+	close(done)
 
 	etag := strings.ToLower(hex.EncodeToString(h.Sum(nil)))
 	partMeta := PartMeta{
@@ -243,7 +256,7 @@ func (m *MultiPartStore) ListParts(bucket string, key string, uploadID string) (
 // CompleteMultipartUpload concatenates the uploaded parts into the final
 // object, computes and returns the multipart ETag, and cleans up temporary
 // parts and metadata.
-func (m *MultiPartStore) CompleteMultipartUpload(bucket string, key string, uploadID string, sortedPartNumbers []int) (string, error) {
+func (m *MultiPartStore) CompleteMultipartUpload(ctx context.Context, bucket string, key string, uploadID string, sortedPartNumbers []int) (string, error) {
 	logging.Info(m.logger, "msg", fmt.Sprintf("Complete multipart upload: [%s/%s], UploadID: %s", bucket, key, uploadID))
 	mk := metaKey(bucket, key, uploadID)
 	md, err := m.getUploadMeta(mk)
@@ -303,6 +316,16 @@ func (m *MultiPartStore) CompleteMultipartUpload(bucket string, key string, uplo
 		}
 	}()
 
+	// Cancel the composition if request context is done
+	done := make(chan struct{})
+	go func() {
+		select {
+		case <-ctx.Done():
+			_ = pr.CloseWithError(ctx.Err())
+		case <-done:
+		}
+	}()
+
 	nc := m.client.NATS()
 	js, err := nc.JetStream()
 	if err != nil {
@@ -320,8 +343,10 @@ func (m *MultiPartStore) CompleteMultipartUpload(bucket string, key string, uplo
 	_, err = os.Put(&nats.ObjectMeta{Name: key}, pr)
 	if err != nil {
 		logging.Error(m.logger, "msg", "Error at CompleteMultipartUpload", "err", err)
+		close(done)
 		return "", err
 	}
+	close(done)
 
 	etagHex := hex.EncodeToString(md5Concat.Sum(nil))
 	finalETag := fmt.Sprintf(`"%s-%d"`, strings.ToLower(etagHex), len(sortedPartNumbers))

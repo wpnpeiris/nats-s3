@@ -1,19 +1,20 @@
 package s3api
 
 import (
-	"encoding/xml"
-	"errors"
-	"fmt"
-	"github.com/nats-io/nats.go"
-	"github.com/wpnpeiris/nats-s3/internal/client"
-	"github.com/wpnpeiris/nats-s3/internal/model"
-	"github.com/wpnpeiris/nats-s3/internal/streams"
-	"io"
-	"log"
-	"net/http"
-	"strconv"
-	"strings"
-	"time"
+    "encoding/xml"
+    "errors"
+    "fmt"
+    "github.com/nats-io/nats.go"
+    "github.com/wpnpeiris/nats-s3/internal/client"
+    "github.com/wpnpeiris/nats-s3/internal/model"
+    "github.com/wpnpeiris/nats-s3/internal/streams"
+    "io"
+    "bytes"
+    "log"
+    "net/http"
+    "strconv"
+    "strings"
+    "time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/s3"
@@ -104,11 +105,11 @@ func (s *S3Gateway) CopyObject(w http.ResponseWriter, r *http.Request) {
 	// Determine metadata handling based on x-amz-metadata-directive
 	contentType, metadata := determineMetadataForCopy(r, sourceObj)
 
-	// Put object at destination
-	destInfo, err := s.client.PutObject(destBucket, destKey, contentType, metadata, sourceData)
-	if s.handleObjectError(w, r, err) {
-		return
-	}
+    // Put object at destination (stream with cancellation)
+    destInfo, err := s.client.PutObjectStream(r.Context(), destBucket, destKey, contentType, metadata, bytes.NewReader(sourceData))
+    if s.handleObjectError(w, r, err) {
+        return
+    }
 
 	// Return CopyObjectResult XML response
 	result := CopyObjectResult{
@@ -433,33 +434,21 @@ func (s *S3Gateway) Upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Use LimitReader as defense-in-depth to ensure we never read more than maxSinglePutSize
-	limitedBody := io.LimitReader(r.Body, maxSinglePutSize+1)
-	body, err := io.ReadAll(limitedBody)
-	if err != nil {
-		model.WriteErrorResponse(w, r, model.ErrInternalError)
-		return
-	}
+    contentType := extractContentType(r)
+    meta := extractMetadata(r)
 
-	// Additional check: if we read more than allowed, reject the request
-	if int64(len(body)) > maxSinglePutSize {
-		model.WriteErrorResponse(w, r, model.ErrEntityTooLarge)
-		return
-	}
-
-	contentType := extractContentType(r)
-	meta := extractMetadata(r)
-
-	log.Println("Upload to", bucket, "with key", key, " with content-type", contentType, " with user-meta", meta)
-	res, err := s.client.PutObject(bucket, key, contentType, meta, body)
-	if err != nil {
-		if errors.Is(err, client.ErrBucketNotFound) {
-			model.WriteErrorResponse(w, r, model.ErrNoSuchBucket)
-			return
-		}
-		model.WriteErrorResponse(w, r, model.ErrInternalError)
-		return
-	}
+    log.Println("Upload to", bucket, "with key", key, " with content-type", contentType, " with user-meta", meta)
+    // Stream the body directly to JetStream so client cancellation aborts the write
+    limitedReader := io.LimitReader(r.Body, maxSinglePutSize+1)
+    res, err := s.client.PutObjectStream(r.Context(), bucket, key, contentType, meta, limitedReader)
+    if err != nil {
+        if errors.Is(err, client.ErrBucketNotFound) {
+            model.WriteErrorResponse(w, r, model.ErrNoSuchBucket)
+            return
+        }
+        model.WriteErrorResponse(w, r, model.ErrInternalError)
+        return
+    }
 	if res.Digest != "" {
 		w.Header().Set("ETag", formatETag(res.Digest))
 	}
@@ -488,38 +477,22 @@ func (s *S3Gateway) StreamUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	dec := streams.NewSigV4StreamReader(r.Body)
-	defer dec.Close()
-	limitedBody := io.LimitReader(dec, maxSinglePutSize+1)
-	body, err := io.ReadAll(limitedBody)
-	if err != nil {
-		model.WriteErrorResponse(w, r, model.ErrInternalError)
-		return
-	}
+    contentType := extractContentType(r)
+    meta := extractMetadata(r)
 
-	if err := streams.CheckDecodedLengthMatches(r, int64(len(body))); err != nil {
-		model.WriteErrorResponse(w, r, model.ErrInvalidRequest)
-		return
-	}
-
-	if int64(len(body)) > maxSinglePutSize {
-		model.WriteErrorResponse(w, r, model.ErrEntityTooLarge)
-		return
-	}
-
-	contentType := extractContentType(r)
-	meta := extractMetadata(r)
-
-	log.Println("StreamUpload to", bucket, "with key", key, " with content-type", contentType, " with user-meta", meta)
-	res, err := s.client.PutObject(bucket, key, contentType, meta, body)
-	if err != nil {
-		if errors.Is(err, client.ErrBucketNotFound) {
-			model.WriteErrorResponse(w, r, model.ErrNoSuchBucket)
-			return
-		}
-		model.WriteErrorResponse(w, r, model.ErrInternalError)
-		return
-	}
+    log.Println("StreamUpload to", bucket, "with key", key, " with content-type", contentType, " with user-meta", meta)
+    // Use limited SigV4 decoder and stream to backend so cancellation stops work
+    dec := streams.NewLimitedSigV4StreamReader(r.Body, maxSinglePutSize+1)
+    defer dec.Close()
+    res, err := s.client.PutObjectStream(r.Context(), bucket, key, contentType, meta, dec)
+    if err != nil {
+        if errors.Is(err, client.ErrBucketNotFound) {
+            model.WriteErrorResponse(w, r, model.ErrNoSuchBucket)
+            return
+        }
+        model.WriteErrorResponse(w, r, model.ErrInternalError)
+        return
+    }
 	if res.Digest != "" {
 		w.Header().Set("ETag", formatETag(res.Digest))
 	}

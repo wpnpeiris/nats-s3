@@ -1,13 +1,15 @@
 package client
 
 import (
-	"bytes"
-	"errors"
-	"fmt"
+    "bytes"
+    "context"
+    "errors"
+    "fmt"
+    "io"
 
-	"github.com/go-kit/log"
-	"github.com/nats-io/nats.go"
-	"github.com/wpnpeiris/nats-s3/internal/logging"
+    "github.com/go-kit/log"
+    "github.com/nats-io/nats.go"
+    "github.com/wpnpeiris/nats-s3/internal/logging"
 )
 
 var ErrBucketNotFound = errors.New("bucket not found")
@@ -30,8 +32,8 @@ type NatsObjectClient struct {
 }
 
 func NewNatsObjectClient(logger log.Logger,
-	natsClient *Client,
-	opts NatsObjectClientOptions) (*NatsObjectClient, error) {
+    natsClient *Client,
+    opts NatsObjectClientOptions) (*NatsObjectClient, error) {
 
 	if opts.Replicas < 1 {
 		logging.Warn(logger, "msg", fmt.Sprintf("Invalid replicas given. Will default to 1: %d", opts.Replicas))
@@ -243,10 +245,10 @@ func (c *NatsObjectClient) ListObjects(bucket string) ([]*nats.ObjectInfo, error
 
 // PutObject writes an object to the given bucket with the provided key and metadata.
 func (c *NatsObjectClient) PutObject(bucket string,
-	key string,
-	contentType string,
-	metadata map[string]string,
-	data []byte) (*nats.ObjectInfo, error) {
+    key string,
+    contentType string,
+    metadata map[string]string,
+    data []byte) (*nats.ObjectInfo, error) {
 	logging.Info(c.logger, "msg", fmt.Sprintf("Pub object: [%s/%s]", bucket, key))
 	nc := c.client.NATS()
 	js, err := nc.JetStream()
@@ -263,15 +265,66 @@ func (c *NatsObjectClient) PutObject(bucket string,
 		return nil, err
 	}
 
-	meta := nats.ObjectMeta{
-		Name:     key,
-		Metadata: metadata,
-		Headers: nats.Header{
-			"Content-Type": []string{contentType},
-		},
-	}
+    meta := nats.ObjectMeta{
+        Name:     key,
+        Metadata: metadata,
+        Headers: nats.Header{
+            "Content-Type": []string{contentType},
+        },
+    }
 
-	return os.Put(&meta, bytes.NewReader(data))
+    return os.Put(&meta, bytes.NewReader(data))
+}
+
+// PutObjectStream writes an object using a streaming reader. The read operation
+// will observe ctx cancellation and abort early where possible.
+func (c *NatsObjectClient) PutObjectStream(ctx context.Context,
+    bucket string,
+    key string,
+    contentType string,
+    metadata map[string]string,
+    reader io.Reader) (*nats.ObjectInfo, error) {
+    logging.Info(c.logger, "msg", fmt.Sprintf("Pub object (stream): [%s/%s]", bucket, key))
+    nc := c.client.NATS()
+    js, err := nc.JetStream()
+    if err != nil {
+        logging.Error(c.logger, "msg", "Error at PutObjectStream", "err", err)
+        return nil, err
+    }
+    os, err := js.ObjectStore(bucket)
+    if err != nil {
+        logging.Error(c.logger, "msg", "Error at PutObjectStream", "err", err)
+        if errors.Is(err, nats.ErrStreamNotFound) {
+            return nil, ErrBucketNotFound
+        }
+        return nil, err
+    }
+
+    meta := nats.ObjectMeta{
+        Name:     key,
+        Metadata: metadata,
+        Headers: nats.Header{
+            "Content-Type": []string{contentType},
+        },
+    }
+
+    cr := &ctxReader{ctx: ctx, r: reader}
+    return os.Put(&meta, cr)
+}
+
+// ctxReader checks for context cancellation prior to each Read call.
+type ctxReader struct {
+    ctx context.Context
+    r   io.Reader
+}
+
+func (c *ctxReader) Read(p []byte) (int, error) {
+    select {
+    case <-c.ctx.Done():
+        return 0, c.ctx.Err()
+    default:
+    }
+    return c.r.Read(p)
 }
 
 // GetObjectRetention retrieves retention metadata for an object

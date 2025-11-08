@@ -2,6 +2,7 @@ package s3api
 
 import (
 	"fmt"
+	"github.com/wpnpeiris/nats-s3/internal/interceptor"
 	"net/http"
 	"time"
 
@@ -13,7 +14,6 @@ import (
 	"github.com/wpnpeiris/nats-s3/internal/credential"
 	"github.com/wpnpeiris/nats-s3/internal/logging"
 	"github.com/wpnpeiris/nats-s3/internal/metrics"
-	"github.com/wpnpeiris/nats-s3/internal/validation"
 )
 
 // S3Gateway registers S3-compatible HTTP routes (2006-03-01) and delegates
@@ -74,8 +74,10 @@ func NewS3Gateway(logger log.Logger,
 func (s *S3Gateway) RegisterRoutes(router *mux.Router) {
 	r := router.PathPrefix("/").Subrouter()
 
-	// Apply validation to all routes
-	validator := &validation.RequestValidator{}
+	// Apply cancellation and validation to all routes
+	cancel := &interceptor.RequestCancellation{}
+	r.Use(cancel.CancelIfDone)
+	validator := &interceptor.RequestValidator{}
 	r.Use(validator.Validate)
 
 	// Unauthenticated monitoring endpoints
