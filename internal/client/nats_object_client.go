@@ -1,9 +1,10 @@
 package client
 
 import (
-	"bytes"
+	"context"
 	"errors"
 	"fmt"
+	"io"
 
 	"github.com/go-kit/log"
 	"github.com/nats-io/nats.go"
@@ -241,22 +242,23 @@ func (c *NatsObjectClient) ListObjects(bucket string) ([]*nats.ObjectInfo, error
 	return ls, err
 }
 
-// PutObject writes an object to the given bucket with the provided key and metadata.
-func (c *NatsObjectClient) PutObject(bucket string,
+// PutObjectStream writes an object using a streaming reader.
+func (c *NatsObjectClient) PutObjectStream(ctx context.Context,
+	bucket string,
 	key string,
 	contentType string,
 	metadata map[string]string,
-	data []byte) (*nats.ObjectInfo, error) {
-	logging.Info(c.logger, "msg", fmt.Sprintf("Pub object: [%s/%s]", bucket, key))
+	reader io.Reader) (*nats.ObjectInfo, error) {
+	logging.Info(c.logger, "msg", fmt.Sprintf("Pub object (stream): [%s/%s]", bucket, key))
 	nc := c.client.NATS()
 	js, err := nc.JetStream()
 	if err != nil {
-		logging.Error(c.logger, "msg", "Error at PutObject", "err", err)
+		logging.Error(c.logger, "msg", "Error at PutObjectStream", "err", err)
 		return nil, err
 	}
 	os, err := js.ObjectStore(bucket)
 	if err != nil {
-		logging.Error(c.logger, "msg", "Error at PutObject", "err", err)
+		logging.Error(c.logger, "msg", "Error at PutObjectStream", "err", err)
 		if errors.Is(err, nats.ErrStreamNotFound) {
 			return nil, ErrBucketNotFound
 		}
@@ -271,7 +273,8 @@ func (c *NatsObjectClient) PutObject(bucket string,
 		},
 	}
 
-	return os.Put(&meta, bytes.NewReader(data))
+	cr := &ctxReader{ctx: ctx, r: reader}
+	return os.Put(&meta, cr)
 }
 
 // GetObjectRetention retrieves retention metadata for an object
@@ -363,4 +366,19 @@ func (c *NatsObjectClient) PutObjectRetention(bucket string, key string, mode st
 	}
 
 	return nil
+}
+
+// ctxReader checks for context cancellation prior to each Read call.
+type ctxReader struct {
+	ctx context.Context
+	r   io.Reader
+}
+
+func (c *ctxReader) Read(p []byte) (int, error) {
+	select {
+	case <-c.ctx.Done():
+		return 0, c.ctx.Err()
+	default:
+	}
+	return c.r.Read(p)
 }

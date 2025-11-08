@@ -1,6 +1,7 @@
 package client
 
 import (
+	"context"
 	"crypto/md5"
 	"encoding/base64"
 	"encoding/hex"
@@ -130,7 +131,7 @@ func (m *MultiPartStore) InitMultipartUpload(bucket string, key string, uploadID
 
 // UploadPart streams a part into temporary storage and records its ETag/size
 // under the multipart session. Returns the hex ETag (without quotes).
-func (m *MultiPartStore) UploadPart(bucket string, key string, uploadID string, part int, dataReader io.ReadCloser) (string, error) {
+func (m *MultiPartStore) UploadPart(ctx context.Context, bucket string, key string, uploadID string, part int, dataReader io.ReadCloser) (string, error) {
 	logging.Info(m.logger, "msg", fmt.Sprintf("Upload part:%06d [%s/%s], UploadID: %s", part, bucket, key, uploadID))
 
 	h := md5.New()
@@ -142,6 +143,10 @@ func (m *MultiPartStore) UploadPart(bucket string, key string, uploadID string, 
 			_ = pw.CloseWithError(err)
 		}
 	}()
+
+	// Cancel the upload if the context is done
+	done := watchContextCancellation(ctx, pr)
+	defer close(done) // Ensure goroutine cleanup on all exit paths
 
 	partKey := partKey(bucket, key, uploadID, part)
 	obj, err := m.savePartData(partKey, pr)
@@ -243,7 +248,7 @@ func (m *MultiPartStore) ListParts(bucket string, key string, uploadID string) (
 // CompleteMultipartUpload concatenates the uploaded parts into the final
 // object, computes and returns the multipart ETag, and cleans up temporary
 // parts and metadata.
-func (m *MultiPartStore) CompleteMultipartUpload(bucket string, key string, uploadID string, sortedPartNumbers []int) (string, error) {
+func (m *MultiPartStore) CompleteMultipartUpload(ctx context.Context, bucket string, key string, uploadID string, sortedPartNumbers []int) (string, error) {
 	logging.Info(m.logger, "msg", fmt.Sprintf("Complete multipart upload: [%s/%s], UploadID: %s", bucket, key, uploadID))
 	mk := metaKey(bucket, key, uploadID)
 	md, err := m.getUploadMeta(mk)
@@ -302,6 +307,10 @@ func (m *MultiPartStore) CompleteMultipartUpload(bucket string, key string, uplo
 			_ = pr.Close()
 		}
 	}()
+
+	// Cancel the composition if request context is done
+	done := watchContextCancellation(ctx, pr)
+	defer close(done) // Ensure goroutine cleanup on all exit paths
 
 	nc := m.client.NATS()
 	js, err := nc.JetStream()
@@ -560,4 +569,19 @@ func partMetaPrefix(bucket, key, uploadID string) string {
 		enc.EncodeToString([]byte(bucket)),
 		enc.EncodeToString([]byte(key)),
 		enc.EncodeToString([]byte(uploadID)))
+}
+
+// watchContextCancellation monitors the given context and closes the PipeReader
+// when the context is canceled,
+func watchContextCancellation(ctx context.Context, pr *io.PipeReader) chan struct{} {
+	done := make(chan struct{})
+	go func() {
+		select {
+		case <-ctx.Done():
+			_ = pr.CloseWithError(ctx.Err())
+		case <-done:
+			return
+		}
+	}()
+	return done
 }
