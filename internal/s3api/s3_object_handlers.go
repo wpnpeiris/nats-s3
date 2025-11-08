@@ -1,20 +1,20 @@
 package s3api
 
 import (
-    "encoding/xml"
-    "errors"
-    "fmt"
-    "github.com/nats-io/nats.go"
-    "github.com/wpnpeiris/nats-s3/internal/client"
-    "github.com/wpnpeiris/nats-s3/internal/model"
-    "github.com/wpnpeiris/nats-s3/internal/streams"
-    "io"
-    "bytes"
-    "log"
-    "net/http"
-    "strconv"
-    "strings"
-    "time"
+	"bytes"
+	"encoding/xml"
+	"errors"
+	"fmt"
+	"github.com/nats-io/nats.go"
+	"github.com/wpnpeiris/nats-s3/internal/client"
+	"github.com/wpnpeiris/nats-s3/internal/model"
+	"github.com/wpnpeiris/nats-s3/internal/streams"
+	"io"
+	"log"
+	"net/http"
+	"strconv"
+	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/s3"
@@ -105,11 +105,11 @@ func (s *S3Gateway) CopyObject(w http.ResponseWriter, r *http.Request) {
 	// Determine metadata handling based on x-amz-metadata-directive
 	contentType, metadata := determineMetadataForCopy(r, sourceObj)
 
-    // Put object at destination (stream with cancellation)
-    destInfo, err := s.client.PutObjectStream(r.Context(), destBucket, destKey, contentType, metadata, bytes.NewReader(sourceData))
-    if s.handleObjectError(w, r, err) {
-        return
-    }
+	// Put object at destination (stream with cancellation)
+	destInfo, err := s.client.PutObjectStream(r.Context(), destBucket, destKey, contentType, metadata, bytes.NewReader(sourceData))
+	if s.handleObjectError(w, r, err) {
+		return
+	}
 
 	// Return CopyObjectResult XML response
 	result := CopyObjectResult{
@@ -122,6 +122,13 @@ func (s *S3Gateway) CopyObject(w http.ResponseWriter, r *http.Request) {
 
 // DeleteObject deletes the specified object and responds with 204 No Content.
 func (s *S3Gateway) DeleteObject(w http.ResponseWriter, r *http.Request) {
+	// Check if request already canceled
+	select {
+	case <-r.Context().Done():
+		return
+	default:
+	}
+
 	bucket := mux.Vars(r)["bucket"]
 	key := mux.Vars(r)["key"]
 
@@ -434,21 +441,21 @@ func (s *S3Gateway) Upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-    contentType := extractContentType(r)
-    meta := extractMetadata(r)
+	contentType := extractContentType(r)
+	meta := extractMetadata(r)
 
-    log.Println("Upload to", bucket, "with key", key, " with content-type", contentType, " with user-meta", meta)
-    // Stream the body directly to JetStream so client cancellation aborts the write
-    limitedReader := io.LimitReader(r.Body, maxSinglePutSize+1)
-    res, err := s.client.PutObjectStream(r.Context(), bucket, key, contentType, meta, limitedReader)
-    if err != nil {
-        if errors.Is(err, client.ErrBucketNotFound) {
-            model.WriteErrorResponse(w, r, model.ErrNoSuchBucket)
-            return
-        }
-        model.WriteErrorResponse(w, r, model.ErrInternalError)
-        return
-    }
+	log.Println("Upload to", bucket, "with key", key, " with content-type", contentType, " with user-meta", meta)
+	// Stream the body directly to JetStream with strict size validation
+	limitedReader := newSizeLimitReader(r.Body, maxSinglePutSize)
+	res, err := s.client.PutObjectStream(r.Context(), bucket, key, contentType, meta, limitedReader)
+	if err != nil {
+		if errors.Is(err, client.ErrBucketNotFound) {
+			model.WriteErrorResponse(w, r, model.ErrNoSuchBucket)
+			return
+		}
+		model.WriteErrorResponse(w, r, model.ErrInternalError)
+		return
+	}
 	if res.Digest != "" {
 		w.Header().Set("ETag", formatETag(res.Digest))
 	}
@@ -477,22 +484,23 @@ func (s *S3Gateway) StreamUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-    contentType := extractContentType(r)
-    meta := extractMetadata(r)
+	contentType := extractContentType(r)
+	meta := extractMetadata(r)
 
-    log.Println("StreamUpload to", bucket, "with key", key, " with content-type", contentType, " with user-meta", meta)
-    // Use limited SigV4 decoder and stream to backend so cancellation stops work
-    dec := streams.NewLimitedSigV4StreamReader(r.Body, maxSinglePutSize+1)
-    defer dec.Close()
-    res, err := s.client.PutObjectStream(r.Context(), bucket, key, contentType, meta, dec)
-    if err != nil {
-        if errors.Is(err, client.ErrBucketNotFound) {
-            model.WriteErrorResponse(w, r, model.ErrNoSuchBucket)
-            return
-        }
-        model.WriteErrorResponse(w, r, model.ErrInternalError)
-        return
-    }
+	log.Println("StreamUpload to", bucket, "with key", key, " with content-type", contentType, " with user-meta", meta)
+	// Use SigV4 decoder with strict size validation
+	dec := streams.NewLimitedSigV4StreamReader(r.Body, maxSinglePutSize+1)
+	defer dec.Close()
+	limitedReader := newSizeLimitReader(dec, maxSinglePutSize)
+	res, err := s.client.PutObjectStream(r.Context(), bucket, key, contentType, meta, limitedReader)
+	if err != nil {
+		if errors.Is(err, client.ErrBucketNotFound) {
+			model.WriteErrorResponse(w, r, model.ErrNoSuchBucket)
+			return
+		}
+		model.WriteErrorResponse(w, r, model.ErrInternalError)
+		return
+	}
 	if res.Digest != "" {
 		w.Header().Set("ETag", formatETag(res.Digest))
 	}
@@ -760,4 +768,43 @@ func updateMetadataHeaders(obj *nats.ObjectInfo, w http.ResponseWriter) {
 			w.Header().Set(k, v)
 		}
 	}
+}
+
+// sizeLimitReader enforces a strict size limit during streaming and returns
+// an error if the limit is exceeded. Unlike io.LimitReader, which silently stops
+// at the limit, this reader returns an error to prevent oversized uploads.
+type sizeLimitReader struct {
+	r         io.Reader
+	limit     int64
+	bytesRead int64
+}
+
+func newSizeLimitReader(r io.Reader, limit int64) *sizeLimitReader {
+	return &sizeLimitReader{r: r, limit: limit}
+}
+
+func (s *sizeLimitReader) Read(p []byte) (int, error) {
+	if s.bytesRead >= s.limit {
+		return 0, fmt.Errorf("size limit exceeded: maximum %d bytes allowed", s.limit)
+	}
+
+	// Don't read more than remaining allowance
+	maxRead := s.limit - s.bytesRead
+	if int64(len(p)) > maxRead {
+		p = p[:maxRead]
+	}
+
+	n, err := s.r.Read(p)
+	s.bytesRead += int64(n)
+
+	// If we've hit the limit and there's still data, return error
+	if s.bytesRead >= s.limit && err == nil {
+		// Try to read one more byte to see if there's more data
+		var probe [1]byte
+		if m, _ := s.r.Read(probe[:]); m > 0 {
+			return n, fmt.Errorf("size limit exceeded: maximum %d bytes allowed", s.limit)
+		}
+	}
+
+	return n, err
 }

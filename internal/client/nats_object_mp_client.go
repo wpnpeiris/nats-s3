@@ -146,11 +146,13 @@ func (m *MultiPartStore) UploadPart(ctx context.Context, bucket string, key stri
 
 	// Cancel the upload if the context is done
 	done := make(chan struct{})
+	defer close(done) // Ensure goroutine cleanup on all exit paths
 	go func() {
 		select {
 		case <-ctx.Done():
 			_ = pr.CloseWithError(ctx.Err())
 		case <-done:
+			return
 		}
 	}()
 
@@ -159,10 +161,8 @@ func (m *MultiPartStore) UploadPart(ctx context.Context, bucket string, key stri
 	if err != nil {
 		// Close the reader to signal the goroutine to stop
 		_ = pr.Close()
-		close(done)
 		return "", err
 	}
-	close(done)
 
 	etag := strings.ToLower(hex.EncodeToString(h.Sum(nil)))
 	partMeta := PartMeta{
@@ -318,11 +318,13 @@ func (m *MultiPartStore) CompleteMultipartUpload(ctx context.Context, bucket str
 
 	// Cancel the composition if request context is done
 	done := make(chan struct{})
+	defer close(done) // Ensure goroutine cleanup on all exit paths
 	go func() {
 		select {
 		case <-ctx.Done():
 			_ = pr.CloseWithError(ctx.Err())
 		case <-done:
+			return
 		}
 	}()
 
@@ -343,10 +345,8 @@ func (m *MultiPartStore) CompleteMultipartUpload(ctx context.Context, bucket str
 	_, err = os.Put(&nats.ObjectMeta{Name: key}, pr)
 	if err != nil {
 		logging.Error(m.logger, "msg", "Error at CompleteMultipartUpload", "err", err)
-		close(done)
 		return "", err
 	}
-	close(done)
 
 	etagHex := hex.EncodeToString(md5Concat.Sum(nil))
 	finalETag := fmt.Sprintf(`"%s-%d"`, strings.ToLower(etagHex), len(sortedPartNumbers))
