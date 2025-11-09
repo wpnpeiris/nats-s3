@@ -165,6 +165,26 @@ Flags
 - `--http.idle-timeout`: HTTP server idle timeout (default 120s).
 - `--http.read-header-timeout`: HTTP server read header timeout (default 30s).
 
+## Server Compatibility
+
+NATS-S3 is built on NATS JetStream Object Store and is compatible with a wide range of NATS server versions:
+
+**Requirements:**
+- **Minimum:** NATS Server v2.9.0 or later
+- **Recommended:** NATS Server v2.10.0+ for optimal performance and stability
+- **Tested with:** v2.9.x, v2.10.x, v2.11.x, v2.12.x
+
+**Dependencies:**
+- Uses JetStream Object Store (available since NATS Server v2.6.2)
+- Multipart upload feature uses JetStream Key-Value store
+- Built with nats.go client v1.34.1
+
+**Notes:**
+- The NATS Go client is designed to be backwards compatible with older servers
+- Newer client features may degrade gracefully on older servers
+- Users control their own NATS server versions - the gateway adapts automatically
+- For production deployments, we recommend using NATS Server v2.10.0 or later
+
 ### Coverage
 Generate coverage profile and HTML report locally:
 ```bash
