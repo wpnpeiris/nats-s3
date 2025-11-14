@@ -5,10 +5,6 @@ import (
 	"encoding/xml"
 	"errors"
 	"fmt"
-	"github.com/nats-io/nats.go"
-	"github.com/wpnpeiris/nats-s3/internal/client"
-	"github.com/wpnpeiris/nats-s3/internal/model"
-	"github.com/wpnpeiris/nats-s3/internal/streams"
 	"io"
 	"log"
 	"net/http"
@@ -19,6 +15,10 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/gorilla/mux"
+	"github.com/nats-io/nats.go/jetstream"
+	"github.com/wpnpeiris/nats-s3/internal/client"
+	"github.com/wpnpeiris/nats-s3/internal/model"
+	"github.com/wpnpeiris/nats-s3/internal/streams"
 )
 
 // PrefixEntry represents a common prefix in S3 list results.
@@ -97,7 +97,7 @@ func (s *S3Gateway) CopyObject(w http.ResponseWriter, r *http.Request) {
 	log.Printf("CopyObject from %s/%s to %s/%s", sourceBucket, sourceKey, destBucket, destKey)
 
 	// Get source object
-	sourceObj, sourceData, err := s.client.GetObject(sourceBucket, sourceKey)
+	sourceObj, sourceData, err := s.client.GetObject(r.Context(), sourceBucket, sourceKey)
 	if s.handleObjectError(w, r, err) {
 		return
 	}
@@ -125,7 +125,7 @@ func (s *S3Gateway) DeleteObject(w http.ResponseWriter, r *http.Request) {
 	bucket := mux.Vars(r)["bucket"]
 	key := mux.Vars(r)["key"]
 
-	err := s.client.DeleteObject(bucket, key)
+	err := s.client.DeleteObject(r.Context(), bucket, key)
 	if s.handleObjectError(w, r, err) {
 		return
 	}
@@ -149,7 +149,7 @@ func (s *S3Gateway) DeleteObjects(w http.ResponseWriter, r *http.Request) {
 	var deleteErrors []DeleteError
 
 	for _, obj := range deleteReq.Objects {
-		err := s.client.DeleteObject(bucket, obj.Key)
+		err := s.client.DeleteObject(r.Context(), bucket, obj.Key)
 		if err != nil {
 			// Record error
 			code := "InternalError"
@@ -201,7 +201,7 @@ func (s *S3Gateway) Download(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	info, data, err := s.client.GetObject(bucket, key)
+	info, data, err := s.client.GetObject(r.Context(), bucket, key)
 	if s.handleObjectError(w, r, err) {
 		return
 	}
@@ -258,7 +258,7 @@ func (s *S3Gateway) GetObjectRetention(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("GetObjectRetention: bucket=%s key=%s", bucket, key)
 
-	mode, retainUntilDate, err := s.client.GetObjectRetention(bucket, key)
+	mode, retainUntilDate, err := s.client.GetObjectRetention(r.Context(), bucket, key)
 	if err != nil {
 		if s.handleObjectError(w, r, err) {
 			return
@@ -280,7 +280,7 @@ func (s *S3Gateway) HeadObject(w http.ResponseWriter, r *http.Request) {
 	bucket := mux.Vars(r)["bucket"]
 	key := mux.Vars(r)["key"]
 
-	res, err := s.client.GetObjectInfo(bucket, key)
+	res, err := s.client.GetObjectInfo(r.Context(), bucket, key)
 	if s.handleObjectError(w, r, err) {
 		return
 	}
@@ -303,7 +303,7 @@ func (s *S3Gateway) ListObjects(w http.ResponseWriter, r *http.Request) {
 
 	log.Println("List Objects in bucket", bucket)
 
-	res, err := s.client.ListObjects(bucket)
+	res, err := s.client.ListObjects(r.Context(), bucket)
 	if err != nil {
 		if errors.Is(err, client.ErrBucketNotFound) {
 			model.WriteErrorResponse(w, r, model.ErrNoSuchBucket)
@@ -403,7 +403,7 @@ func (s *S3Gateway) UpdateObjectRetention(w http.ResponseWriter, r *http.Request
 	}
 
 	// Set retention in NATS object metadata
-	err = s.client.PutObjectRetention(bucket, key, mode, retainUntilDate)
+	err = s.client.PutObjectRetention(r.Context(), bucket, key, mode, retainUntilDate)
 	if err != nil {
 		if s.handleObjectError(w, r, err) {
 			return
@@ -503,7 +503,7 @@ func (s *S3Gateway) StreamUpload(w http.ResponseWriter, r *http.Request) {
 // determineMetadataForCopy determines which metadata to use for the destination object
 // based on the x-amz-metadata-directive header (COPY or REPLACE).
 // Returns the content type and metadata map to use for the destination.
-func determineMetadataForCopy(r *http.Request, sourceObj *nats.ObjectInfo) (contentType string, metadata map[string]string) {
+func determineMetadataForCopy(r *http.Request, sourceObj *jetstream.ObjectInfo) (contentType string, metadata map[string]string) {
 	metadataDirective := r.Header.Get("x-amz-metadata-directive")
 	if metadataDirective == "" {
 		metadataDirective = "COPY" // Default to COPY
@@ -555,7 +555,7 @@ func formatETag(digest string) string {
 }
 
 // groupObjectsByDelimiter groups objects by common prefix when a delimiter is specified.
-func groupObjectsByDelimiter(objects []*nats.ObjectInfo, prefix, delimiter string) ([]s3.Object, []PrefixEntry) {
+func groupObjectsByDelimiter(objects []*jetstream.ObjectInfo, prefix, delimiter string) ([]s3.Object, []PrefixEntry) {
 	var contents []s3.Object
 	prefixMap := make(map[string]bool) // Track unique prefixes
 
@@ -684,7 +684,7 @@ func parseRangeHeader(rangeHeader string, contentLength int) (start, end int, er
 
 // objectsToContents converts NATS ObjectInfo objects to S3 Object format.
 // Optionally filters by prefix if specified.
-func objectsToContents(objects []*nats.ObjectInfo, prefix string) []s3.Object {
+func objectsToContents(objects []*jetstream.ObjectInfo, prefix string) []s3.Object {
 	var contents []s3.Object
 	for _, obj := range objects {
 		// Filter by prefix if specified
@@ -726,12 +726,12 @@ func parseCopySource(copySourceHeader string) (bucket, key string, err error) {
 }
 
 // updateContentLength writes 'Content-Length' header in response
-func updateContentLength(obj *nats.ObjectInfo, w http.ResponseWriter) {
+func updateContentLength(obj *jetstream.ObjectInfo, w http.ResponseWriter) {
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", obj.Size))
 }
 
 // updateContentTypeHeaders writes 'Content-Type' header in response
-func updateContentTypeHeaders(obj *nats.ObjectInfo, w http.ResponseWriter) {
+func updateContentTypeHeaders(obj *jetstream.ObjectInfo, w http.ResponseWriter) {
 	if obj != nil && obj.Headers != nil {
 		if cts, ok := obj.Headers["Content-Type"]; ok && len(cts) > 0 && cts[0] != "" {
 			w.Header().Set("Content-Type", cts[0])
@@ -740,19 +740,19 @@ func updateContentTypeHeaders(obj *nats.ObjectInfo, w http.ResponseWriter) {
 }
 
 // updateETagHeader writes 'ETag' header in response
-func updateETagHeader(obj *nats.ObjectInfo, w http.ResponseWriter) {
+func updateETagHeader(obj *jetstream.ObjectInfo, w http.ResponseWriter) {
 	if obj.Digest != "" {
 		w.Header().Set("ETag", formatETag(obj.Digest))
 	}
 }
 
 // updateLastModifiedHeader writes 'Last-Modified' header in response
-func updateLastModifiedHeader(obj *nats.ObjectInfo, w http.ResponseWriter) {
+func updateLastModifiedHeader(obj *jetstream.ObjectInfo, w http.ResponseWriter) {
 	w.Header().Set("Last-Modified", obj.ModTime.UTC().Format(http.TimeFormat))
 }
 
 // updateMetadataHeaders writes metadata headers in response
-func updateMetadataHeaders(obj *nats.ObjectInfo, w http.ResponseWriter) {
+func updateMetadataHeaders(obj *jetstream.ObjectInfo, w http.ResponseWriter) {
 	if obj.Metadata != nil {
 		for k, v := range obj.Metadata {
 			if k == "" {

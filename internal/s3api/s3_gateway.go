@@ -2,7 +2,6 @@ package s3api
 
 import (
 	"fmt"
-	"github.com/wpnpeiris/nats-s3/internal/interceptor"
 	"net/http"
 	"time"
 
@@ -12,6 +11,7 @@ import (
 	"github.com/wpnpeiris/nats-s3/internal/auth"
 	"github.com/wpnpeiris/nats-s3/internal/client"
 	"github.com/wpnpeiris/nats-s3/internal/credential"
+	"github.com/wpnpeiris/nats-s3/internal/interceptor"
 	"github.com/wpnpeiris/nats-s3/internal/logging"
 	"github.com/wpnpeiris/nats-s3/internal/metrics"
 )
