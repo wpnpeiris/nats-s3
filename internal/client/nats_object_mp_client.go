@@ -55,7 +55,8 @@ type MultiPartStore struct {
 	partObjectStore jetstream.ObjectStore
 }
 
-func NewMultiPartStore(ctx context.Context, logger log.Logger, c *Client) (*MultiPartStore, error) {
+func NewMultiPartStore(logger log.Logger, c *Client) (*MultiPartStore, error) {
+	ctx := context.Background()
 	nc := c.NATS()
 	js, err := jetstream.New(nc)
 	if err != nil {
