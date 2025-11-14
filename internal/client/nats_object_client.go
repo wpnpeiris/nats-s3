@@ -28,6 +28,7 @@ type NatsObjectClientOptions struct {
 type NatsObjectClient struct {
 	logger log.Logger
 	client *Client
+	js     jetstream.JetStream
 	opts   NatsObjectClientOptions
 }
 
@@ -40,9 +41,15 @@ func NewNatsObjectClient(logger log.Logger,
 		opts.Replicas = 1
 	}
 
+	js, err := jetstream.New(natsClient.NATS())
+	if err != nil {
+		return nil, fmt.Errorf("failed to create JetStream context: %w", err)
+	}
+
 	return &NatsObjectClient{
 		logger: logger,
 		client: natsClient,
+		js:     js,
 		opts:   opts,
 	}, nil
 }
@@ -62,15 +69,9 @@ func (c *NatsObjectClient) Stats() nats.Statistics {
 // CreateBucket creates a JetStream Object Store bucket.
 func (c *NatsObjectClient) CreateBucket(ctx context.Context, bucketName string) (jetstream.ObjectStoreStatus, error) {
 	logging.Info(c.logger, "msg", fmt.Sprintf("Create bucket: %s", bucketName))
-	nc := c.client.NATS()
-	js, err := jetstream.New(nc)
-	if err != nil {
-		logging.Error(c.logger, "msg", "Error at CreateBucket when jetstream.New()", "err", err)
-		return nil, err
-	}
 
 	// Check if bucket already exists to fail duplicate creation explicitly
-	_, err = js.ObjectStore(ctx, bucketName)
+	_, err := c.js.ObjectStore(ctx, bucketName)
 	if err == nil {
 		logging.Info(c.logger, "msg", fmt.Sprintf("Bucket already exists: %s", bucketName))
 		return nil, ErrBucketAlreadyExists
@@ -79,7 +80,7 @@ func (c *NatsObjectClient) CreateBucket(ctx context.Context, bucketName string) 
 		return nil, err
 	}
 
-	os, err := js.CreateObjectStore(ctx, jetstream.ObjectStoreConfig{
+	os, err := c.js.CreateObjectStore(ctx, jetstream.ObjectStoreConfig{
 		Bucket:   bucketName,
 		Storage:  jetstream.FileStorage,
 		Replicas: c.opts.Replicas,

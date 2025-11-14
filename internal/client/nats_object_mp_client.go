@@ -49,7 +49,7 @@ type UploadMeta struct {
 // tempPartStore holds uploaded parts in a temporary Object Store.
 type MultiPartStore struct {
 	logger          log.Logger
-	client          *Client
+	js              jetstream.JetStream
 	metaStore       jetstream.KeyValue
 	partMetaStore   jetstream.KeyValue
 	partObjectStore jetstream.ObjectStore
@@ -106,7 +106,7 @@ func NewMultiPartStore(ctx context.Context, logger log.Logger, c *Client) (*Mult
 
 	return &MultiPartStore{
 		logger:          logger,
-		client:          c,
+		js:              js,
 		metaStore:       metaKV,
 		partMetaStore:   partMetaKV,
 		partObjectStore: partOS,
@@ -312,13 +312,7 @@ func (m *MultiPartStore) CompleteMultipartUpload(ctx context.Context, bucket str
 	done := watchContextCancellation(ctx, pr)
 	defer close(done) // Ensure goroutine cleanup on all exit paths
 
-	nc := m.client.NATS()
-	js, err := jetstream.New(nc)
-	if err != nil {
-		logging.Error(m.logger, "msg", "Error at CompleteMultipartUpload", "err", err)
-		return "", err
-	}
-	os, err := js.ObjectStore(ctx, bucket)
+	os, err := m.js.ObjectStore(ctx, bucket)
 	if err != nil {
 		logging.Error(m.logger, "msg", "Error at CompleteMultipartUpload", "err", err)
 		if errors.Is(err, jetstream.ErrBucketNotFound) {
