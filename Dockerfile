@@ -16,7 +16,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     go build -o /out/nats-s3 ./cmd/nats-s3
 
-FROM alpine:3.20
+FROM alpine:3.22
 # Create non-root user to run the service
 RUN adduser -D -H -s /sbin/nologin app
 USER app
