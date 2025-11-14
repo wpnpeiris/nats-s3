@@ -1,8 +1,8 @@
 package s3api
 
 import (
+	"context"
 	"fmt"
-	"github.com/wpnpeiris/nats-s3/internal/interceptor"
 	"net/http"
 	"time"
 
@@ -12,6 +12,7 @@ import (
 	"github.com/wpnpeiris/nats-s3/internal/auth"
 	"github.com/wpnpeiris/nats-s3/internal/client"
 	"github.com/wpnpeiris/nats-s3/internal/credential"
+	"github.com/wpnpeiris/nats-s3/internal/interceptor"
 	"github.com/wpnpeiris/nats-s3/internal/logging"
 	"github.com/wpnpeiris/nats-s3/internal/metrics"
 )
@@ -50,7 +51,7 @@ func NewS3Gateway(logger log.Logger,
 		return nil, fmt.Errorf("failed to initialize NATS object client: %w", err)
 	}
 
-	mps, err := client.NewMultiPartStore(logger, natsClient)
+	mps, err := client.NewMultiPartStore(context.Background(), logger, natsClient)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize multipart store: %w", err)
 	}

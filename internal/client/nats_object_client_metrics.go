@@ -1,6 +1,8 @@
 package client
 
 import (
+	"context"
+
 	"github.com/go-kit/log"
 	"github.com/nats-io/nats.go"
 	"github.com/prometheus/client_golang/prometheus"
@@ -83,7 +85,7 @@ func (c MetricCollector) Collect(ch chan<- prometheus.Metric) {
 // countBuckets return number of buckets
 func (c MetricCollector) countBuckets() float64 {
 	buckets := 0.0
-	ch, err := c.client.ListBuckets()
+	ch, err := c.client.ListBuckets(context.Background())
 	if err != nil {
 		logging.Warn(c.logger, "msg", "Error at listing buckets for metrics", "err", err)
 	} else {

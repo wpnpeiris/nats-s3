@@ -34,7 +34,7 @@ func (s *S3Gateway) InitiateMultipartUpload(w http.ResponseWriter, r *http.Reque
 	bucket := mux.Vars(r)["bucket"]
 	key := mux.Vars(r)["key"]
 
-	err := s.multiPartStore.InitMultipartUpload(bucket, key, uploadID)
+	err := s.multiPartStore.InitMultipartUpload(r.Context(), bucket, key, uploadID)
 	if err != nil {
 		model.WriteErrorResponse(w, r, model.ErrInternalError)
 		return
@@ -213,7 +213,7 @@ func (s *S3Gateway) AbortMultipartUpload(w http.ResponseWriter, r *http.Request)
 		model.WriteErrorResponse(w, r, model.ErrNoSuchUpload)
 		return
 	}
-	err := s.multiPartStore.AbortMultipartUpload(bucket, key, uploadID)
+	err := s.multiPartStore.AbortMultipartUpload(r.Context(), bucket, key, uploadID)
 	if err != nil {
 		model.WriteErrorResponse(w, r, model.ErrInternalError)
 		return
@@ -250,7 +250,7 @@ func (s *S3Gateway) ListParts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	meta, err := s.multiPartStore.ListParts(bucket, key, uploadID)
+	meta, err := s.multiPartStore.ListParts(r.Context(), bucket, key, uploadID)
 	if err != nil {
 		if errors.Is(err, client.ErrUploadNotFound) || errors.Is(err, client.ErrUploadCompleted) {
 			model.WriteErrorResponse(w, r, model.ErrNoSuchUpload)
