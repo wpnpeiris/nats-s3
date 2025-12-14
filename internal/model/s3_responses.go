@@ -107,6 +107,36 @@ type CompleteMultipartUploadResult struct {
 	VersionId *string `xml:"-"`
 }
 
+// GetObjectAttributesResult is the response for GetObjectAttributes API
+type GetObjectAttributesResult struct {
+	XMLName      xml.Name                  `xml:"http://s3.amazonaws.com/doc/2006-03-01/ GetObjectAttributesOutput"`
+	ETag         *string                   `xml:"ETag,omitempty"`
+	Checksum     *Checksum                 `xml:"Checksum,omitempty"`
+	ObjectParts  *GetObjectAttributesParts `xml:"ObjectParts,omitempty"`
+	StorageClass *string                   `xml:"StorageClass,omitempty"`
+	ObjectSize   *int64                    `xml:"ObjectSize,omitempty"`
+	LastModified *time.Time                `xml:"LastModified,omitempty"`
+	VersionId    *string                   `xml:"VersionId,omitempty"`
+}
+
+// Checksum contains checksum information for GetObjectAttributes
+type Checksum struct {
+	ChecksumCRC32  *string `xml:"ChecksumCRC32,omitempty"`
+	ChecksumCRC32C *string `xml:"ChecksumCRC32C,omitempty"`
+	ChecksumSHA1   *string `xml:"ChecksumSHA1,omitempty"`
+	ChecksumSHA256 *string `xml:"ChecksumSHA256,omitempty"`
+}
+
+// GetObjectAttributesParts contains multipart information
+type GetObjectAttributesParts struct {
+	IsTruncated          *bool  `xml:"IsTruncated,omitempty"`
+	MaxParts             *int64 `xml:"MaxParts,omitempty"`
+	NextPartNumberMarker *int64 `xml:"NextPartNumberMarker,omitempty"`
+	PartNumberMarker     *int64 `xml:"PartNumberMarker,omitempty"`
+	PartsCount           *int64 `xml:"PartsCount,omitempty"`
+	TotalPartsCount      *int64 `xml:"TotalPartsCount,omitempty"`
+}
+
 // WriteXMLResponse encodes the response as XML and writes it with the given
 // HTTP status code and appropriate Content-Type.
 func WriteXMLResponse(w http.ResponseWriter, r *http.Request, statusCode int, response interface{}) {

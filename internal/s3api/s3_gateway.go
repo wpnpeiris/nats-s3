@@ -111,6 +111,7 @@ func (s *S3Gateway) RegisterRoutes(router *mux.Router) {
 	addObjectSubresource(bucket, http.MethodGet, "acl", s.iam.Auth(s.notImplemented))
 	addObjectSubresource(bucket, http.MethodPut, "acl", s.iam.Auth(s.notImplemented))
 	addObjectSubresource(bucket, http.MethodDelete, "acl", s.iam.Auth(s.notImplemented))
+	addObjectSubresource(bucket, http.MethodGet, "attributes", s.iam.Auth(s.GetObjectAttributes))
 	addObjectSubresource(bucket, http.MethodGet, "tagging", s.iam.Auth(s.notImplemented))
 	addObjectSubresource(bucket, http.MethodPut, "tagging", s.iam.Auth(s.notImplemented))
 	addObjectSubresource(bucket, http.MethodDelete, "tagging", s.iam.Auth(s.notImplemented))

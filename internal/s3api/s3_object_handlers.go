@@ -295,6 +295,77 @@ func (s *S3Gateway) HeadObject(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// GetObjectAttributes retrieves metadata attributes for an object.
+// It supports the x-amz-object-attributes header to specify which attributes to return.
+func (s *S3Gateway) GetObjectAttributes(w http.ResponseWriter, r *http.Request) {
+	bucket := mux.Vars(r)["bucket"]
+	key := mux.Vars(r)["key"]
+
+	// Get object info to retrieve metadata
+	res, err := s.client.GetObjectInfo(r.Context(), bucket, key)
+	if s.handleObjectError(w, r, err) {
+		return
+	}
+
+	log.Printf("GetObjectAttributes for %s/%s", bucket, key)
+
+	requestedAttrs := r.Header.Get("x-amz-object-attributes")
+	attrMap := parseObjectAttributes(requestedAttrs)
+
+	result := model.GetObjectAttributesResult{}
+
+	if attrMap["ETag"] || len(attrMap) == 0 {
+		etag := formatETag(res.Digest)
+		result.ETag = &etag
+	}
+
+	if attrMap["StorageClass"] || len(attrMap) == 0 {
+		storageClass := "STANDARD"
+		result.StorageClass = &storageClass
+	}
+
+	if attrMap["ObjectSize"] || len(attrMap) == 0 {
+		size := int64(res.Size)
+		result.ObjectSize = &size
+	}
+
+	modTime := res.ModTime
+	result.LastModified = &modTime
+
+	// Checksum - only if requested (not commonly available in NATS Object Store)
+	if attrMap["Checksum"] {
+		// NATS doesn't store additional checksums beyond ETag, so we'll leave this empty
+		// but include the structure if requested
+		result.Checksum = &model.Checksum{}
+	}
+
+	// ObjectParts - only relevant for multipart objects
+	// NATS Object Store doesn't expose multipart structure for completed objects
+	if attrMap["ObjectParts"] {
+		result.ObjectParts = &model.GetObjectAttributesParts{
+			PartsCount:      aws.Int64(0),
+			TotalPartsCount: aws.Int64(0),
+		}
+	}
+
+	model.WriteXMLResponse(w, r, http.StatusOK, result)
+}
+
+// parseObjectAttributes parses the x-amz-object-attributes header value
+// and returns a map of requested attributes
+func parseObjectAttributes(header string) map[string]bool {
+	attrMap := make(map[string]bool)
+	if header == "" {
+		return attrMap
+	}
+
+	attrs := strings.Split(header, ",")
+	for _, attr := range attrs {
+		attrMap[strings.TrimSpace(attr)] = true
+	}
+	return attrMap
+}
+
 // ListObjects returns objects in a bucket as a simple S3-compatible XML list.
 func (s *S3Gateway) ListObjects(w http.ResponseWriter, r *http.Request) {
 	bucket := mux.Vars(r)["bucket"]
