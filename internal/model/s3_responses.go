@@ -201,6 +201,23 @@ type ObjectRetentionResponse struct {
 	RetainUntilDate string   `xml:"RetainUntilDate"`
 }
 
+// Tagging represents the root XML element for tagging operations
+type Tagging struct {
+	XMLName xml.Name `xml:"http://s3.amazonaws.com/doc/2006-03-01/ Tagging"`
+	TagSet  TagSet   `xml:"TagSet"`
+}
+
+// TagSet contains the collection of tags
+type TagSet struct {
+	Tags []Tag `xml:"Tag"`
+}
+
+// Tag represents a single key-value tag pair
+type Tag struct {
+	Key   string `xml:"Key"`
+	Value string `xml:"Value"`
+}
+
 // WriteResponse writes headers, status code, and optional body, flushing the
 // response when done. Body logging is minimized to avoid leaking data.
 func WriteResponse(w http.ResponseWriter, r *http.Request, statusCode int, response []byte, mType mimeType) {

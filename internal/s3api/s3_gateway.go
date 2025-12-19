@@ -112,9 +112,9 @@ func (s *S3Gateway) RegisterRoutes(router *mux.Router) {
 	addObjectSubresource(bucket, http.MethodPut, "acl", s.iam.Auth(s.notImplemented))
 	addObjectSubresource(bucket, http.MethodDelete, "acl", s.iam.Auth(s.notImplemented))
 	addObjectSubresource(bucket, http.MethodGet, "attributes", s.iam.Auth(s.GetObjectAttributes))
-	addObjectSubresource(bucket, http.MethodGet, "tagging", s.iam.Auth(s.notImplemented))
-	addObjectSubresource(bucket, http.MethodPut, "tagging", s.iam.Auth(s.notImplemented))
-	addObjectSubresource(bucket, http.MethodDelete, "tagging", s.iam.Auth(s.notImplemented))
+	addObjectSubresource(bucket, http.MethodGet, "tagging", s.iam.Auth(s.GetObjectTagging))
+	addObjectSubresource(bucket, http.MethodPut, "tagging", s.iam.Auth(s.PutObjectTagging))
+	addObjectSubresource(bucket, http.MethodDelete, "tagging", s.iam.Auth(s.DeleteObjectTagging))
 	addObjectSubresource(bucket, http.MethodGet, "torrent", s.iam.Auth(s.notImplemented)) // deprecated
 	addObjectSubresource(bucket, http.MethodPost, "restore", s.iam.Auth(s.notImplemented))
 	addObjectSubresource(bucket, http.MethodGet, "legal-hold", s.iam.Auth(s.notImplemented))
