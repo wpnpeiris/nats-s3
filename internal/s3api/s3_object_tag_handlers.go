@@ -3,13 +3,13 @@ package s3api
 import (
 	"encoding/xml"
 	"fmt"
-	"log"
 	"net/http"
 	"net/url"
 	"sort"
 	"strings"
 
 	"github.com/gorilla/mux"
+	"github.com/wpnpeiris/nats-s3/internal/logging"
 	"github.com/wpnpeiris/nats-s3/internal/model"
 )
 
@@ -26,7 +26,7 @@ func (s *S3Gateway) GetObjectTagging(w http.ResponseWriter, r *http.Request) {
 	bucket := mux.Vars(r)["bucket"]
 	key := mux.Vars(r)["key"]
 
-	log.Printf("GetObjectTagging: bucket=%s key=%s", bucket, key)
+	logging.Info(s.logger, "msg", fmt.Sprintf("GetObjectTagging: bucket=%s key=%s", bucket, key))
 
 	// Get object info to retrieve metadata
 	info, err := s.client.GetObjectInfo(r.Context(), bucket, key)
@@ -52,19 +52,19 @@ func (s *S3Gateway) PutObjectTagging(w http.ResponseWriter, r *http.Request) {
 	bucket := mux.Vars(r)["bucket"]
 	key := mux.Vars(r)["key"]
 
-	log.Printf("PutObjectTagging: bucket=%s key=%s", bucket, key)
+	logging.Info(s.logger, "msg", fmt.Sprintf("PutObjectTagging: bucket=%s key=%s", bucket, key))
 
 	// Parse tagging XML from request body
 	var tagging model.Tagging
 	if err := xml.NewDecoder(r.Body).Decode(&tagging); err != nil {
-		log.Printf("Error decoding tagging XML: %v", err)
+		logging.Error(s.logger, "msg", "Error decoding tagging XML", "err", err)
 		model.WriteErrorResponse(w, r, model.ErrMalformedXML)
 		return
 	}
 
 	// Validate tags
 	if err := validateTags(tagging.TagSet.Tags); err != nil {
-		log.Printf("Tag validation failed: %v", err)
+		logging.Error(s.logger, "msg", "Tag validation failed", "err", err)
 		model.WriteErrorResponse(w, r, model.ErrInvalidTag)
 		return
 	}
@@ -86,7 +86,7 @@ func (s *S3Gateway) DeleteObjectTagging(w http.ResponseWriter, r *http.Request) 
 	bucket := mux.Vars(r)["bucket"]
 	key := mux.Vars(r)["key"]
 
-	log.Printf("DeleteObjectTagging: bucket=%s key=%s", bucket, key)
+	logging.Info(s.logger, "msg", fmt.Sprintf("DeleteObjectTagging: bucket=%s key=%s", bucket, key))
 
 	// Delete all tags from object
 	err := s.client.DeleteObjectTags(r.Context(), bucket, key)
@@ -168,6 +168,26 @@ func validateTags(tags []model.Tag) error {
 	}
 
 	return nil
+}
+
+// extractTagMetadataFromRequest extracts and validates tags from x-amz-tagging header.
+// Returns tag metadata map or error if parsing/validation fails.
+func extractTagMetadataFromRequest(r *http.Request) (map[string]string, error) {
+	taggingHeader := r.Header.Get("x-amz-tagging")
+	if taggingHeader == "" {
+		return nil, nil
+	}
+
+	tags, err := parseTaggingHeader(taggingHeader)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse tagging header: %w", err)
+	}
+
+	if err := validateTags(tags); err != nil {
+		return nil, fmt.Errorf("tag validation failed: %w", err)
+	}
+
+	return tagsToMetadata(tags), nil
 }
 
 // parseTaggingHeader parses the x-amz-tagging header format.

@@ -17,6 +17,7 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/wpnpeiris/nats-s3/internal/client"
+	"github.com/wpnpeiris/nats-s3/internal/logging"
 	"github.com/wpnpeiris/nats-s3/internal/model"
 	"github.com/wpnpeiris/nats-s3/internal/streams"
 )
@@ -508,27 +509,16 @@ func (s *S3Gateway) Upload(w http.ResponseWriter, r *http.Request) {
 	contentType := extractContentType(r)
 	meta := extractMetadata(r)
 
-	// Extract and store tags from x-amz-tagging header if present
-	if taggingHeader := r.Header.Get("x-amz-tagging"); taggingHeader != "" {
-		tags, err := parseTaggingHeader(taggingHeader)
-		if err != nil {
-			log.Printf("Error parsing x-amz-tagging header: %v", err)
-			model.WriteErrorResponse(w, r, model.ErrInvalidTag)
-			return
-		}
-
-		// Validate tags
-		if err := validateTags(tags); err != nil {
-			log.Printf("Tag validation failed: %v", err)
-			model.WriteErrorResponse(w, r, model.ErrInvalidTag)
-			return
-		}
-
-		// Merge tags into metadata
-		tagMetadata := tagsToMetadata(tags)
-		for k, v := range tagMetadata {
-			meta[k] = v
-		}
+	// Extract tags from x-amz-tagging header if present
+	tagMetadata, err := extractTagMetadataFromRequest(r)
+	if err != nil {
+		logging.Error(s.logger, "msg", "Error processing tags", "err", err)
+		model.WriteErrorResponse(w, r, model.ErrInvalidTag)
+		return
+	}
+	// Merge tags into metadata
+	for k, v := range tagMetadata {
+		meta[k] = v
 	}
 
 	log.Println("Upload to", bucket, "with key", key, " with content-type", contentType, " with user-meta", meta)
@@ -574,27 +564,16 @@ func (s *S3Gateway) StreamUpload(w http.ResponseWriter, r *http.Request) {
 	contentType := extractContentType(r)
 	meta := extractMetadata(r)
 
-	// Extract and store tags from x-amz-tagging header if present
-	if taggingHeader := r.Header.Get("x-amz-tagging"); taggingHeader != "" {
-		tags, err := parseTaggingHeader(taggingHeader)
-		if err != nil {
-			log.Printf("Error parsing x-amz-tagging header: %v", err)
-			model.WriteErrorResponse(w, r, model.ErrInvalidTag)
-			return
-		}
-
-		// Validate tags
-		if err := validateTags(tags); err != nil {
-			log.Printf("Tag validation failed: %v", err)
-			model.WriteErrorResponse(w, r, model.ErrInvalidTag)
-			return
-		}
-
-		// Merge tags into metadata
-		tagMetadata := tagsToMetadata(tags)
-		for k, v := range tagMetadata {
-			meta[k] = v
-		}
+	// Extract tags from x-amz-tagging header if present
+	tagMetadata, err := extractTagMetadataFromRequest(r)
+	if err != nil {
+		logging.Error(s.logger, "msg", "Error processing tags", "err", err)
+		model.WriteErrorResponse(w, r, model.ErrInvalidTag)
+		return
+	}
+	// Merge tags into metadata
+	for k, v := range tagMetadata {
+		meta[k] = v
 	}
 
 	log.Println("StreamUpload to", bucket, "with key", key, " with content-type", contentType, " with user-meta", meta)
