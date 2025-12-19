@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/go-kit/log"
 	"github.com/nats-io/nats.go"
@@ -41,7 +42,7 @@ func NewNatsObjectClient(logger log.Logger,
 		opts.Replicas = 1
 	}
 
-	js, err := jetstream.New(natsClient.NATS())
+	js, err := natsClient.Jetstream()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create JetStream context: %w", err)
 	}
@@ -96,8 +97,7 @@ func (c *NatsObjectClient) CreateBucket(ctx context.Context, bucketName string) 
 // DeleteBucket deletes a bucket identified by its name.
 func (c *NatsObjectClient) DeleteBucket(ctx context.Context, bucket string) error {
 	logging.Info(c.logger, "msg", fmt.Sprintf("Delete bucket: %s", bucket))
-	nc := c.client.NATS()
-	js, err := jetstream.New(nc)
+	js, err := c.client.Jetstream()
 	if err != nil {
 		logging.Error(c.logger, "msg", "Error at DeleteBucket", "err", err)
 		return err
@@ -116,8 +116,7 @@ func (c *NatsObjectClient) DeleteBucket(ctx context.Context, bucket string) erro
 // DeleteObject removes an object identified by bucket and key.
 func (c *NatsObjectClient) DeleteObject(ctx context.Context, bucket string, key string) error {
 	logging.Info(c.logger, "msg", fmt.Sprintf("Delete object on bucket: [%s/%s]", bucket, key))
-	nc := c.client.NATS()
-	js, err := jetstream.New(nc)
+	js, err := c.client.Jetstream()
 	if err != nil {
 		logging.Error(c.logger, "msg", "Error at DeleteObject", "err", err)
 		return err
@@ -145,8 +144,7 @@ func (c *NatsObjectClient) DeleteObject(ctx context.Context, bucket string, key 
 // GetObjectInfo fetches metadata for an object.
 func (c *NatsObjectClient) GetObjectInfo(ctx context.Context, bucket string, key string) (*jetstream.ObjectInfo, error) {
 	logging.Info(c.logger, "msg", fmt.Sprintf("Get object info: [%s/%s]", bucket, key))
-	nc := c.client.NATS()
-	js, err := jetstream.New(nc)
+	js, err := c.client.Jetstream()
 	if err != nil {
 		logging.Error(c.logger, "msg", "Error at GetObjectInfo", "err", err)
 		return nil, err
@@ -174,8 +172,7 @@ func (c *NatsObjectClient) GetObjectInfo(ctx context.Context, bucket string, key
 // GetObject retrieves an object's metadata and bytes.
 func (c *NatsObjectClient) GetObject(ctx context.Context, bucket string, key string) (*jetstream.ObjectInfo, []byte, error) {
 	logging.Info(c.logger, "msg", fmt.Sprintf("Get object : [%s/%s]", bucket, key))
-	nc := c.client.NATS()
-	js, err := jetstream.New(nc)
+	js, err := c.client.Jetstream()
 	if err != nil {
 		logging.Error(c.logger, "msg", "Error at GetObject", "err", err)
 		return nil, nil, err
@@ -207,8 +204,7 @@ func (c *NatsObjectClient) GetObject(ctx context.Context, bucket string, key str
 // ListBuckets returns a channel of object store statuses for all buckets.
 func (c *NatsObjectClient) ListBuckets(ctx context.Context) (<-chan jetstream.ObjectStoreStatus, error) {
 	logging.Info(c.logger, "msg", "List buckets")
-	nc := c.client.NATS()
-	js, err := jetstream.New(nc)
+	js, err := c.client.Jetstream()
 	if err != nil {
 		logging.Error(c.logger, "msg", "Error at ListBuckets", "err", err)
 		return nil, err
@@ -219,8 +215,7 @@ func (c *NatsObjectClient) ListBuckets(ctx context.Context) (<-chan jetstream.Ob
 // ListObjects lists all objects in the given bucket.
 func (c *NatsObjectClient) ListObjects(ctx context.Context, bucket string) ([]*jetstream.ObjectInfo, error) {
 	logging.Info(c.logger, "msg", fmt.Sprintf("List objects: [%s]", bucket))
-	nc := c.client.NATS()
-	js, err := jetstream.New(nc)
+	js, err := c.client.Jetstream()
 	if err != nil {
 		logging.Error(c.logger, "msg", "Error at ListObjects", "err", err)
 		return nil, err
@@ -252,8 +247,7 @@ func (c *NatsObjectClient) PutObjectStream(ctx context.Context,
 	metadata map[string]string,
 	reader io.Reader) (*jetstream.ObjectInfo, error) {
 	logging.Info(c.logger, "msg", fmt.Sprintf("Pub object (stream): [%s/%s]", bucket, key))
-	nc := c.client.NATS()
-	js, err := jetstream.New(nc)
+	js, err := c.client.Jetstream()
 	if err != nil {
 		logging.Error(c.logger, "msg", "Error at PutObjectStream", "err", err)
 		return nil, err
@@ -281,8 +275,7 @@ func (c *NatsObjectClient) PutObjectStream(ctx context.Context,
 // GetObjectRetention retrieves retention metadata for an object
 func (c *NatsObjectClient) GetObjectRetention(ctx context.Context, bucket string, key string) (mode string, retainUntilDate string, err error) {
 	logging.Info(c.logger, "msg", fmt.Sprintf("Get object retention: %s/%s", bucket, key))
-	nc := c.client.NATS()
-	js, err := jetstream.New(nc)
+	js, err := c.client.Jetstream()
 	if err != nil {
 		logging.Error(c.logger, "msg", "Error at GetObjectRetention when jetstream.New()", "err", err)
 		return "", "", err
@@ -320,8 +313,7 @@ func (c *NatsObjectClient) GetObjectRetention(ctx context.Context, bucket string
 // PutObjectRetention sets retention metadata for an existing object
 func (c *NatsObjectClient) PutObjectRetention(ctx context.Context, bucket string, key string, mode string, retainUntilDate string) error {
 	logging.Info(c.logger, "msg", fmt.Sprintf("Put object retention: %s/%s mode=%s until=%s", bucket, key, mode, retainUntilDate))
-	nc := c.client.NATS()
-	js, err := jetstream.New(nc)
+	js, err := c.client.Jetstream()
 	if err != nil {
 		logging.Error(c.logger, "msg", "Error at PutObjectRetention when jetstream.New()", "err", err)
 		return err
@@ -367,4 +359,123 @@ func (c *NatsObjectClient) PutObjectRetention(ctx context.Context, bucket string
 	}
 
 	return nil
+}
+
+// PutObjectTags sets or replaces tags on an existing object.
+// Tags are stored in metadata with "x-amz-tag-" prefix.
+func (c *NatsObjectClient) PutObjectTags(ctx context.Context, bucket string, key string, tagMetadata map[string]string) error {
+	logging.Info(c.logger, "msg", fmt.Sprintf("Put object tags: %s/%s", bucket, key))
+
+	js, err := c.client.Jetstream()
+	if err != nil {
+		logging.Error(c.logger, "msg", "Error at PutObjectTags when jetstream.New()", "err", err)
+		return err
+	}
+
+	os, err := js.ObjectStore(ctx, bucket)
+	if err != nil {
+		logging.Error(c.logger, "msg", "Error getting object store", "err", err)
+		if errors.Is(err, jetstream.ErrBucketNotFound) {
+			return ErrBucketNotFound
+		}
+		return err
+	}
+
+	// Get existing object info
+	info, err := os.GetInfo(ctx, key)
+	if err != nil {
+		if errors.Is(err, jetstream.ErrObjectNotFound) {
+			return ErrObjectNotFound
+		}
+		logging.Error(c.logger, "msg", "Error getting object info", "err", err)
+		return err
+	}
+
+	// Remove existing tags (keys with "x-amz-tag-" prefix)
+	if info.Metadata == nil {
+		info.Metadata = make(map[string]string)
+	}
+	removeTagsFromMetadata(info.Metadata)
+
+	// Add new tags
+	for key, value := range tagMetadata {
+		info.Metadata[key] = value
+	}
+
+	// Update metadata using UpdateMeta
+	meta := jetstream.ObjectMeta{
+		Name:        info.Name,
+		Description: info.Description,
+		Metadata:    info.Metadata,
+		Headers:     info.Headers,
+	}
+
+	err = os.UpdateMeta(ctx, key, meta)
+	if err != nil {
+		logging.Error(c.logger, "msg", "Error updating object metadata", "err", err)
+		return err
+	}
+
+	return nil
+}
+
+// DeleteObjectTags removes all tags from an object.
+func (c *NatsObjectClient) DeleteObjectTags(ctx context.Context, bucket string, key string) error {
+	logging.Info(c.logger, "msg", fmt.Sprintf("Delete object tags: %s/%s", bucket, key))
+
+	js, err := c.client.Jetstream()
+	if err != nil {
+		logging.Error(c.logger, "msg", "Error at DeleteObjectTags when jetstream.New()", "err", err)
+		return err
+	}
+
+	os, err := js.ObjectStore(ctx, bucket)
+	if err != nil {
+		logging.Error(c.logger, "msg", "Error getting object store", "err", err)
+		if errors.Is(err, jetstream.ErrBucketNotFound) {
+			return ErrBucketNotFound
+		}
+		return err
+	}
+
+	// Get existing object info
+	info, err := os.GetInfo(ctx, key)
+	if err != nil {
+		if errors.Is(err, jetstream.ErrObjectNotFound) {
+			return ErrObjectNotFound
+		}
+		logging.Error(c.logger, "msg", "Error getting object info", "err", err)
+		return err
+	}
+
+	// Remove all tag metadata (keys with "x-amz-tag-" prefix)
+	removeTagsFromMetadata(info.Metadata)
+
+	// Update metadata
+	meta := jetstream.ObjectMeta{
+		Name:        info.Name,
+		Description: info.Description,
+		Metadata:    info.Metadata,
+		Headers:     info.Headers,
+	}
+
+	err = os.UpdateMeta(ctx, key, meta)
+	if err != nil {
+		logging.Error(c.logger, "msg", "Error updating object metadata", "err", err)
+		return err
+	}
+
+	return nil
+}
+
+// removeTagsFromMetadata removes all tag entries (keys with "x-amz-tag-" prefix) from the metadata map.
+func removeTagsFromMetadata(metadata map[string]string) {
+	if metadata == nil {
+		return
+	}
+	for key := range metadata {
+		if strings.HasPrefix(key, "x-amz-tag-") {
+			delete(metadata, key)
+		}
+	}
 }

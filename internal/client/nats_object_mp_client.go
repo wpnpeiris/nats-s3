@@ -57,10 +57,9 @@ type MultiPartStore struct {
 
 func NewMultiPartStore(logger log.Logger, c *Client) (*MultiPartStore, error) {
 	ctx := context.Background()
-	nc := c.NATS()
-	js, err := jetstream.New(nc)
+	js, err := c.Jetstream()
 	if err != nil {
-		return nil, fmt.Errorf("failed to create multipart session store when calling jetstream.New(): %w", err)
+		return nil, fmt.Errorf("failed to create multipart session store when calling Jetstream(): %w", err)
 	}
 
 	metaKV, err := js.KeyValue(ctx, MetaStoreName)

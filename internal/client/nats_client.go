@@ -2,6 +2,7 @@ package client
 
 import (
 	"fmt"
+	"github.com/nats-io/nats.go/jetstream"
 	"log"
 
 	"github.com/nats-io/nats.go"
@@ -59,6 +60,11 @@ func (c *Client) SetupConnectionToNATS(servers string, options ...nats.Option) e
 // NATS returns the underlying NATS connection.
 func (c *Client) NATS() *nats.Conn {
 	return c.nc
+}
+
+// JetStream a new JetStream instance.
+func (c *Client) Jetstream() (jetstream.JetStream, error) {
+	return jetstream.New(c.nc)
 }
 
 // ID returns the client's stable unique identifier.

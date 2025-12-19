@@ -17,6 +17,7 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/wpnpeiris/nats-s3/internal/client"
+	"github.com/wpnpeiris/nats-s3/internal/logging"
 	"github.com/wpnpeiris/nats-s3/internal/model"
 	"github.com/wpnpeiris/nats-s3/internal/streams"
 )
@@ -508,6 +509,18 @@ func (s *S3Gateway) Upload(w http.ResponseWriter, r *http.Request) {
 	contentType := extractContentType(r)
 	meta := extractMetadata(r)
 
+	// Extract tags from x-amz-tagging header if present
+	tagMetadata, err := extractTagMetadataFromRequest(r)
+	if err != nil {
+		logging.Error(s.logger, "msg", "Error processing tags", "err", err)
+		model.WriteErrorResponse(w, r, model.ErrInvalidTag)
+		return
+	}
+	// Merge tags into metadata
+	for k, v := range tagMetadata {
+		meta[k] = v
+	}
+
 	log.Println("Upload to", bucket, "with key", key, " with content-type", contentType, " with user-meta", meta)
 	// Stream the body directly to JetStream with strict size validation
 	limitedReader := newSizeLimitReader(r.Body, maxSinglePutSize)
@@ -551,6 +564,18 @@ func (s *S3Gateway) StreamUpload(w http.ResponseWriter, r *http.Request) {
 	contentType := extractContentType(r)
 	meta := extractMetadata(r)
 
+	// Extract tags from x-amz-tagging header if present
+	tagMetadata, err := extractTagMetadataFromRequest(r)
+	if err != nil {
+		logging.Error(s.logger, "msg", "Error processing tags", "err", err)
+		model.WriteErrorResponse(w, r, model.ErrInvalidTag)
+		return
+	}
+	// Merge tags into metadata
+	for k, v := range tagMetadata {
+		meta[k] = v
+	}
+
 	log.Println("StreamUpload to", bucket, "with key", key, " with content-type", contentType, " with user-meta", meta)
 	// Use SigV4 decoder with strict size validation
 	dec := streams.NewLimitedSigV4StreamReader(r.Body, maxSinglePutSize+1)
@@ -592,8 +617,41 @@ func determineMetadataForCopy(r *http.Request, sourceObj *jetstream.ObjectInfo) 
 				contentType = cts[0]
 			}
 		}
-		metadata = sourceObj.Metadata
+		// Create a copy of source metadata to avoid modifying the original
+		metadata = make(map[string]string)
+		for k, v := range sourceObj.Metadata {
+			metadata[k] = v
+		}
 	}
+
+	// Handle tagging directive separately
+	taggingDirective := r.Header.Get("x-amz-tagging-directive")
+	if taggingDirective == "" {
+		taggingDirective = "COPY" // Default to COPY
+	}
+
+	if taggingDirective == "REPLACE" {
+		// Remove old tags from metadata
+		for k := range metadata {
+			if strings.HasPrefix(k, "x-amz-tag-") {
+				delete(metadata, k)
+			}
+		}
+
+		// Add new tags from x-amz-tagging header
+		if taggingHeader := r.Header.Get("x-amz-tagging"); taggingHeader != "" {
+			tags, err := parseTaggingHeader(taggingHeader)
+			if err == nil {
+				if validateTags(tags) == nil {
+					tagMetadata := tagsToMetadata(tags)
+					for k, v := range tagMetadata {
+						metadata[k] = v
+					}
+				}
+			}
+		}
+	}
+	// If COPY, tags are already included in metadata from source
 
 	return contentType, metadata
 }
