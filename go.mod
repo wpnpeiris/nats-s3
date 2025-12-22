@@ -7,8 +7,8 @@ require (
 	github.com/go-kit/log v0.2.1
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/mux v1.8.1
-	github.com/nats-io/nats-server/v2 v2.12.2
-	github.com/nats-io/nats.go v1.47.0
+	github.com/nats-io/nats-server/v2 v2.12.3
+	github.com/nats-io/nats.go v1.48.0
 	github.com/nats-io/nuid v1.0.1
 	github.com/prometheus/client_golang v1.23.2
 )
