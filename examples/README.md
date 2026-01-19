@@ -36,13 +36,25 @@ aws s3 cp s3://my-bucket/test.txt downloaded.txt --endpoint-url=http://localhost
 
 ```
 examples/
+├── AWS_CLI_USAGE.md         # Comprehensive AWS CLI command reference
 ├── docker-compose.yml       # Complete Docker Compose setup
 ├── credentials.json         # Example S3 credentials
+├── python/                  # Python/Boto3 examples
 ├── kubernetes/              # Kubernetes deployment examples (coming soon)
 ├── rclone/                  # Rclone integration (coming soon)
 ├── restic/                  # Restic backup integration (coming soon)
 └── terraform/               # Terraform examples (coming soon)
 ```
+
+## Complete AWS CLI Reference
+
+See **[AWS_CLI_USAGE.md](AWS_CLI_USAGE.md)** for comprehensive examples of all supported S3 operations including:
+- Bucket operations (create, delete, list)
+- Object operations (upload, download, copy, delete)
+- Multipart uploads with complete scripts
+- Object tagging (NEW in v0.4.0)
+- Object retention for compliance
+- Advanced features (sync, presigned URLs, batch operations)
 
 ## Integration Examples
 
