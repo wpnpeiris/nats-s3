@@ -66,7 +66,12 @@ Follow these steps to spin up NATS-S3, integrated with NATS server, and use AWS 
 docker run -p 4222:4222 -ti nats:latest -js
 ```
 
-3) Create a credentials file
+3) Build the nats-s3 gateway
+```bash
+make build
+```
+
+4) Create a credentials file
 ```bash
 cat > credentials.json <<EOF
 {
@@ -80,16 +85,16 @@ cat > credentials.json <<EOF
 EOF
 ```
 
-4) Start the nats-s3 gateway
+5) Start the nats-s3 gateway
 ```bash
 # In a separate terminal
-./nats-s3 \
+./bin/nats-s3 \
   --listen 0.0.0.0:5222 \
   --natsServers nats://127.0.0.1:4222 \
   --s3.credentials credentials.json
 ```
 
-5) Configure your AWS CLI to use the same credentials
+6) Configure your AWS CLI to use the same credentials
 ```bash
 export AWS_ACCESS_KEY_ID=my-access-key
 export AWS_SECRET_ACCESS_KEY=my-secret-key
@@ -97,33 +102,33 @@ export AWS_SECRET_ACCESS_KEY=my-secret-key
 export AWS_DEFAULT_REGION=us-east-1
 ```
 
-6) Create a bucket
+7) Create a bucket
 ```bash
 aws s3 mb s3://bucket1 --endpoint-url=http://localhost:5222
 ```
 
-7) List buckets
+8) List buckets
 ```bash
 aws s3 ls --endpoint-url=http://localhost:5222
 ```
 
-8) Put an object
+9) Put an object
 ```bash
 echo "hello world" > file.txt
 aws s3 cp file.txt s3://bucket1/hello.txt --endpoint-url=http://localhost:5222
 ```
 
-9) List bucket contents
+10) List bucket contents
 ```bash
 aws s3 ls s3://bucket1 --endpoint-url=http://localhost:5222
 ```
 
-10) Download the object
+11) Download the object
 ```bash
 aws s3 cp s3://bucket1/hello.txt ./hello_copy.txt --endpoint-url=http://localhost:5222
 ```
 
-11) Delete the object
+12) Delete the object
 ```bash
 aws s3 rm s3://bucket1/hello.txt --endpoint-url=http://localhost:5222
 ```
@@ -143,7 +148,7 @@ make build
 
 Run
 ```shell
-./nats-s3 \
+./bin/nats-s3 \
   --listen 0.0.0.0:5222 \
   --natsServers nats://127.0.0.1:4222 \
   --s3.credentials credentials.json

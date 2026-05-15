@@ -479,3 +479,10 @@ func removeTagsFromMetadata(metadata map[string]string) {
 		}
 	}
 }
+
+// Close closes the underlying NATS connection.
+func (c *NatsObjectClient) Close() {
+	if c.client != nil {
+		c.client.Close()
+	}
+}
