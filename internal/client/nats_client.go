@@ -76,3 +76,10 @@ func (c *Client) ID() string {
 func (c *Client) Name() string {
 	return fmt.Sprintf("%s:%s", c.kind, c.id)
 }
+
+// Close closes the NATS connection.
+func (c *Client) Close() {
+	if c.nc != nil {
+		c.nc.Close()
+	}
+}

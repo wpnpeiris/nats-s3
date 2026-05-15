@@ -233,3 +233,10 @@ func addBucketSubresource(r *mux.Router, method, sub string, h http.HandlerFunc)
 func addObjectSubresource(r *mux.Router, method, sub string, h http.HandlerFunc) {
 	r.Methods(method).Path("/{key:.+}").Queries(sub, "").HandlerFunc(h)
 }
+
+// Close closes the underlying NATS connection.
+func (s *S3Gateway) Close() {
+	if s.client != nil {
+		s.client.Close()
+	}
+}

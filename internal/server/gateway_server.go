@@ -1,9 +1,12 @@
 package server
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/go-kit/log"
@@ -138,6 +141,40 @@ func (s *GatewayServer) Start() error {
 		MaxHeaderBytes: 1 << 20, // 1 MB
 	}
 
-	logging.Info(s.logger, "msg", fmt.Sprintf("Listening for HTTP requests on %s", s.config.Endpoint))
-	return srv.ListenAndServe()
+	// Channel to listen for errors from the HTTP server
+	serverErrors := make(chan error, 1)
+
+	// Start HTTP server in a goroutine
+	go func() {
+		logging.Info(s.logger, "msg", fmt.Sprintf("Listening for HTTP requests on %s", s.config.Endpoint))
+		serverErrors <- srv.ListenAndServe()
+	}()
+
+	// Channel to listen for interrupt signals
+	shutdown := make(chan os.Signal, 1)
+	signal.Notify(shutdown, os.Interrupt, syscall.SIGTERM)
+
+	// Block until we receive a signal or server error
+	select {
+	case err := <-serverErrors:
+		return fmt.Errorf("server error: %w", err)
+
+	case sig := <-shutdown:
+		logging.Info(s.logger, "msg", fmt.Sprintf("Received signal %v, starting graceful shutdown", sig))
+
+		// Give outstanding requests 30 seconds to complete
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		if err := srv.Shutdown(ctx); err != nil {
+			logging.Error(s.logger, "msg", "Error during server shutdown", "err", err)
+			return fmt.Errorf("could not gracefully shutdown server: %w", err)
+		}
+
+		// Close NATS connection
+		s.s3Gateway.Close()
+		logging.Info(s.logger, "msg", "Server shutdown completed")
+	}
+
+	return nil
 }
