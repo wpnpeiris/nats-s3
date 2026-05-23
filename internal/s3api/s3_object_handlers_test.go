@@ -1,13 +1,19 @@
 package s3api
 
 import (
+	"context"
 	"encoding/xml"
+	"fmt"
+	"github.com/wpnpeiris/nats-s3/internal/model"
 	"io"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/wpnpeiris/nats-s3/internal/logging"
+	"github.com/wpnpeiris/nats-s3/internal/streams"
 	"github.com/wpnpeiris/nats-s3/internal/testutil"
 
 	"github.com/gorilla/mux"
@@ -15,322 +21,327 @@ import (
 )
 
 func TestObjectHandlers_CRUD(t *testing.T) {
-	s := testutil.StartJSServer(t)
-	defer s.Shutdown()
-
-	logger := logging.NewLogger(logging.Config{Level: "debug"})
-	gw, err := NewS3Gateway(logger, s.ClientURL(), 1, nil, nil)
-	if err != nil {
-		t.Fatalf("failed to create S3 gateway: %v", err)
+	tests := []struct {
+		name   string
+		bucket string
+		key    string
+		data   string
+	}{
+		{
+			name:   "basic object CRUD operations",
+			bucket: "tobj",
+			key:    "dir/sub/file.txt",
+			data:   "hello-objects",
+		},
+		{
+			name:   "simple key object CRUD",
+			bucket: "tobj-simple",
+			key:    "file.txt",
+			data:   "simple data",
+		},
+		{
+			name:   "nested path object CRUD",
+			bucket: "tobj-nested",
+			key:    "a/b/c/d/file.txt",
+			data:   "deeply nested",
+		},
 	}
 
-	// Ensure bucket exists
-	natsEndpoint := s.Addr().String()
-	nc, err := nats.Connect(natsEndpoint)
-	// Avoid panic-on-close during tests
-	nc.SetClosedHandler(func(_ *nats.Conn) {})
-	defer nc.Close()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := testutil.StartJSServer(t)
+			defer s.Shutdown()
 
-	js, err := nc.JetStream()
-	if err != nil {
-		t.Fatalf("JetStream failed: %v", err)
-	}
-	bucket := "tobj"
-	if _, err := js.CreateObjectStore(&nats.ObjectStoreConfig{Bucket: bucket}); err != nil {
-		t.Fatalf("create object store failed: %v", err)
-	}
+			logger := logging.NewLogger(logging.Config{Level: "debug"})
+			gw, err := NewS3Gateway(logger, s.ClientURL(), 1, nil, nil)
+			if err != nil {
+				t.Fatalf("failed to create S3 gateway: %v", err)
+			}
 
-	r := mux.NewRouter()
-	gw.RegisterRoutes(r)
+			natsEndpoint := s.Addr().String()
+			nc, err := nats.Connect(natsEndpoint)
+			nc.SetClosedHandler(func(_ *nats.Conn) {})
+			defer nc.Close()
 
-	key := "dir/sub/file.txt"
-	data := "hello-objects"
+			js, err := nc.JetStream()
+			if err != nil {
+				t.Fatalf("JetStream failed: %v", err)
+			}
+			if _, err := js.CreateObjectStore(&nats.ObjectStoreConfig{Bucket: tt.bucket}); err != nil {
+				t.Fatalf("create object store failed: %v", err)
+			}
 
-	// PUT object
-	putReq := httptest.NewRequest("PUT", "/"+bucket+"/"+key, strings.NewReader(data))
-	putRec := httptest.NewRecorder()
-	r.ServeHTTP(putRec, putReq)
-	if putRec.Code != 200 {
-		t.Fatalf("PUT unexpected status: %d body=%s", putRec.Code, putRec.Body.String())
-	}
-	if etag := putRec.Header().Get("ETag"); etag == "" {
-		t.Fatalf("expected ETag header on PUT response")
-	}
+			r := mux.NewRouter()
+			gw.RegisterRoutes(r)
 
-	// HEAD object
-	headReq := httptest.NewRequest("HEAD", "/"+bucket+"/"+key, nil)
-	headRec := httptest.NewRecorder()
-	r.ServeHTTP(headRec, headReq)
-	if headRec.Code != 200 {
-		t.Fatalf("HEAD unexpected status: %d", headRec.Code)
-	}
-	if cl := headRec.Header().Get("Content-Length"); cl == "" {
-		t.Fatalf("HEAD missing Content-Length")
-	}
-	if lm := headRec.Header().Get("Last-Modified"); lm == "" {
-		t.Fatalf("HEAD missing Last-Modified")
-	}
-	if etag := headRec.Header().Get("ETag"); etag == "" {
-		t.Fatalf("HEAD missing ETag")
-	}
+			// PUT object
+			putReq := httptest.NewRequest("PUT", "/"+tt.bucket+"/"+tt.key, strings.NewReader(tt.data))
+			putRec := httptest.NewRecorder()
+			r.ServeHTTP(putRec, putReq)
+			if putRec.Code != 200 {
+				t.Fatalf("PUT unexpected status: %d body=%s", putRec.Code, putRec.Body.String())
+			}
+			if etag := putRec.Header().Get("ETag"); etag == "" {
+				t.Fatalf("expected ETag header on PUT response")
+			}
 
-	// GET object
-	getReq := httptest.NewRequest("GET", "/"+bucket+"/"+key, nil)
-	getRec := httptest.NewRecorder()
-	r.ServeHTTP(getRec, getReq)
-	if getRec.Code != 200 {
-		t.Fatalf("GET unexpected status: %d", getRec.Code)
-	}
-	body, _ := io.ReadAll(getRec.Body)
-	if string(body) != data {
-		t.Fatalf("GET unexpected body: %q", string(body))
-	}
+			// HEAD object
+			headReq := httptest.NewRequest("HEAD", "/"+tt.bucket+"/"+tt.key, nil)
+			headRec := httptest.NewRecorder()
+			r.ServeHTTP(headRec, headReq)
+			if headRec.Code != 200 {
+				t.Fatalf("HEAD unexpected status: %d", headRec.Code)
+			}
+			if cl := headRec.Header().Get("Content-Length"); cl == "" {
+				t.Fatalf("HEAD missing Content-Length")
+			}
+			if lm := headRec.Header().Get("Last-Modified"); lm == "" {
+				t.Fatalf("HEAD missing Last-Modified")
+			}
+			if etag := headRec.Header().Get("ETag"); etag == "" {
+				t.Fatalf("HEAD missing ETag")
+			}
 
-	// LIST objects
-	listReq := httptest.NewRequest("GET", "/"+bucket, nil)
-	listRec := httptest.NewRecorder()
-	r.ServeHTTP(listRec, listReq)
-	if listRec.Code != 200 {
-		t.Fatalf("LIST unexpected status: %d body=%s", listRec.Code, listRec.Body.String())
-	}
-	var parsed struct {
-		Keys []string `xml:"Contents>Key"`
-	}
-	if err := xml.Unmarshal(listRec.Body.Bytes(), &parsed); err != nil {
-		t.Fatalf("unmarshal list xml failed: %v\nxml=%s", err, listRec.Body.String())
-	}
-	found := false
-	for _, k := range parsed.Keys {
-		if k == key {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Fatalf("LIST did not include key %q: %+v", key, parsed.Keys)
-	}
+			// GET object
+			getReq := httptest.NewRequest("GET", "/"+tt.bucket+"/"+tt.key, nil)
+			getRec := httptest.NewRecorder()
+			r.ServeHTTP(getRec, getReq)
+			if getRec.Code != 200 {
+				t.Fatalf("GET unexpected status: %d", getRec.Code)
+			}
+			body, _ := io.ReadAll(getRec.Body)
+			if string(body) != tt.data {
+				t.Fatalf("GET unexpected body: %q", string(body))
+			}
 
-	// DELETE object
-	delReq := httptest.NewRequest("DELETE", "/"+bucket+"/"+key, nil)
-	delRec := httptest.NewRecorder()
-	r.ServeHTTP(delRec, delReq)
-	if delRec.Code != 204 {
-		t.Fatalf("DELETE unexpected status: %d", delRec.Code)
+			// LIST objects
+			listReq := httptest.NewRequest("GET", "/"+tt.bucket, nil)
+			listRec := httptest.NewRecorder()
+			r.ServeHTTP(listRec, listReq)
+			if listRec.Code != 200 {
+				t.Fatalf("LIST unexpected status: %d body=%s", listRec.Code, listRec.Body.String())
+			}
+			var parsed struct {
+				Keys []string `xml:"Contents>Key"`
+			}
+			if err := xml.Unmarshal(listRec.Body.Bytes(), &parsed); err != nil {
+				t.Fatalf("unmarshal list xml failed: %v\nxml=%s", err, listRec.Body.String())
+			}
+			found := false
+			for _, k := range parsed.Keys {
+				if k == tt.key {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Fatalf("LIST did not include key %q: %+v", tt.key, parsed.Keys)
+			}
+
+			// DELETE object
+			delReq := httptest.NewRequest("DELETE", "/"+tt.bucket+"/"+tt.key, nil)
+			delRec := httptest.NewRecorder()
+			r.ServeHTTP(delRec, delReq)
+			if delRec.Code != 204 {
+				t.Fatalf("DELETE unexpected status: %d", delRec.Code)
+			}
+		})
 	}
 }
 
-func TestCopyObject_Basic(t *testing.T) {
-	s := testutil.StartJSServer(t)
-	defer s.Shutdown()
-
-	logger := logging.NewLogger(logging.Config{Level: "debug"})
-	gw, err := NewS3Gateway(logger, s.ClientURL(), 1, nil, nil)
-	if err != nil {
-		t.Fatalf("failed to create S3 gateway: %v", err)
+func TestCopyObject(t *testing.T) {
+	tests := []struct {
+		name              string
+		bucket            string
+		sourceKey         string
+		destKey           string
+		data              string
+		sourceContentType string
+		sourceMetadata    map[string]string
+		metadataDirective string
+		destContentType   string
+		destMetadata      map[string]string
+		expectedStatus    int
+		verifySourceMeta  bool
+		verifyDestMeta    bool
+		expectedDestCT    string
+		expectedDestMeta  map[string]string
+		invalidSource     bool
+		nonExistentSource bool
+	}{
+		{
+			name:              "basic copy with metadata",
+			bucket:            "copy-test",
+			sourceKey:         "source/file.txt",
+			destKey:           "dest/file-copy.txt",
+			data:              "hello-copy-test",
+			sourceContentType: "text/plain",
+			sourceMetadata:    map[string]string{"x-amz-meta-custom": "source-value"},
+			expectedStatus:    200,
+			verifyDestMeta:    true,
+			expectedDestCT:    "text/plain",
+			expectedDestMeta:  map[string]string{"x-amz-meta-custom": "source-value"},
+		},
+		{
+			name:              "copy with REPLACE directive",
+			bucket:            "copy-replace-test",
+			sourceKey:         "source.txt",
+			destKey:           "dest.txt",
+			data:              "test-data",
+			sourceMetadata:    map[string]string{"x-amz-meta-original": "old-value"},
+			metadataDirective: "REPLACE",
+			destContentType:   "application/json",
+			destMetadata:      map[string]string{"x-amz-meta-new": "new-value"},
+			expectedStatus:    200,
+			verifyDestMeta:    true,
+			expectedDestCT:    "application/json",
+			expectedDestMeta:  map[string]string{"x-amz-meta-new": "new-value"},
+		},
+		{
+			name:           "copy with invalid source format",
+			bucket:         "copy-error-test",
+			destKey:        "dest.txt",
+			invalidSource:  true,
+			expectedStatus: 400,
+		},
+		{
+			name:              "copy with non-existent source",
+			bucket:            "copy-error-test2",
+			sourceKey:         "non-existent-key",
+			destKey:           "dest.txt",
+			nonExistentSource: true,
+			expectedStatus:    404,
+		},
 	}
 
-	// Setup NATS connection and create bucket
-	natsEndpoint := s.Addr().String()
-	nc, err := nats.Connect(natsEndpoint)
-	nc.SetClosedHandler(func(_ *nats.Conn) {})
-	defer nc.Close()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := testutil.StartJSServer(t)
+			defer s.Shutdown()
 
-	js, err := nc.JetStream()
-	if err != nil {
-		t.Fatalf("JetStream failed: %v", err)
-	}
-	bucket := "copy-test"
-	if _, err := js.CreateObjectStore(&nats.ObjectStoreConfig{Bucket: bucket}); err != nil {
-		t.Fatalf("create object store failed: %v", err)
-	}
+			logger := logging.NewLogger(logging.Config{Level: "debug"})
+			gw, err := NewS3Gateway(logger, s.ClientURL(), 1, nil, nil)
+			if err != nil {
+				t.Fatalf("failed to create S3 gateway: %v", err)
+			}
 
-	r := mux.NewRouter()
-	gw.RegisterRoutes(r)
+			natsEndpoint := s.Addr().String()
+			nc, err := nats.Connect(natsEndpoint)
+			nc.SetClosedHandler(func(_ *nats.Conn) {})
+			defer nc.Close()
 
-	// Step 1: Upload source object
-	sourceKey := "source/file.txt"
-	data := "hello-copy-test"
-	putReq := httptest.NewRequest("PUT", "/"+bucket+"/"+sourceKey, strings.NewReader(data))
-	putReq.Header.Set("Content-Type", "text/plain")
-	putReq.Header.Set("x-amz-meta-custom", "source-value")
-	putRec := httptest.NewRecorder()
-	r.ServeHTTP(putRec, putReq)
-	if putRec.Code != 200 {
-		t.Fatalf("PUT source unexpected status: %d body=%s", putRec.Code, putRec.Body.String())
-	}
-	sourceETag := putRec.Header().Get("ETag")
+			js, err := nc.JetStream()
+			if err != nil {
+				t.Fatalf("JetStream failed: %v", err)
+			}
+			if _, err := js.CreateObjectStore(&nats.ObjectStoreConfig{Bucket: tt.bucket}); err != nil {
+				t.Fatalf("create object store failed: %v", err)
+			}
 
-	// Step 2: Copy object (COPY metadata directive - default)
-	destKey := "dest/file-copy.txt"
-	copyReq := httptest.NewRequest("PUT", "/"+bucket+"/"+destKey, nil)
-	copyReq.Header.Set("x-amz-copy-source", bucket+"/"+sourceKey)
-	copyRec := httptest.NewRecorder()
-	r.ServeHTTP(copyRec, copyReq)
-	if copyRec.Code != 200 {
-		t.Fatalf("COPY unexpected status: %d body=%s", copyRec.Code, copyRec.Body.String())
-	}
+			r := mux.NewRouter()
+			gw.RegisterRoutes(r)
 
-	// Verify CopyObjectResult XML response
-	var copyResult CopyObjectResult
-	if err := xml.Unmarshal(copyRec.Body.Bytes(), &copyResult); err != nil {
-		t.Fatalf("unmarshal copy result failed: %v\nxml=%s", err, copyRec.Body.String())
-	}
-	if copyResult.ETag == "" {
-		t.Fatalf("copy result missing ETag")
-	}
-	if copyResult.LastModified.IsZero() {
-		t.Fatalf("copy result missing LastModified")
-	}
+			// Upload source object if not testing invalid/non-existent
+			if !tt.invalidSource && !tt.nonExistentSource {
+				putReq := httptest.NewRequest("PUT", "/"+tt.bucket+"/"+tt.sourceKey, strings.NewReader(tt.data))
+				if tt.sourceContentType != "" {
+					putReq.Header.Set("Content-Type", tt.sourceContentType)
+				}
+				for k, v := range tt.sourceMetadata {
+					putReq.Header.Set(k, v)
+				}
+				putRec := httptest.NewRecorder()
+				r.ServeHTTP(putRec, putReq)
+				if putRec.Code != 200 {
+					t.Fatalf("PUT source unexpected status: %d body=%s", putRec.Code, putRec.Body.String())
+				}
+			}
 
-	// Step 3: GET destination object and verify content
-	getReq := httptest.NewRequest("GET", "/"+bucket+"/"+destKey, nil)
-	getRec := httptest.NewRecorder()
-	r.ServeHTTP(getRec, getReq)
-	if getRec.Code != 200 {
-		t.Fatalf("GET dest unexpected status: %d", getRec.Code)
-	}
-	body, _ := io.ReadAll(getRec.Body)
-	if string(body) != data {
-		t.Fatalf("GET dest unexpected body: %q, want %q", string(body), data)
-	}
+			// Perform copy
+			copyReq := httptest.NewRequest("PUT", "/"+tt.bucket+"/"+tt.destKey, nil)
+			if tt.invalidSource {
+				copyReq.Header.Set("x-amz-copy-source", "just-bucket-name")
+			} else {
+				copyReq.Header.Set("x-amz-copy-source", tt.bucket+"/"+tt.sourceKey)
+			}
+			if tt.metadataDirective != "" {
+				copyReq.Header.Set("x-amz-metadata-directive", tt.metadataDirective)
+			}
+			if tt.destContentType != "" {
+				copyReq.Header.Set("Content-Type", tt.destContentType)
+			}
+			for k, v := range tt.destMetadata {
+				copyReq.Header.Set(k, v)
+			}
+			copyRec := httptest.NewRecorder()
+			r.ServeHTTP(copyRec, copyReq)
 
-	// Step 4: HEAD destination to verify metadata was copied
-	headReq := httptest.NewRequest("HEAD", "/"+bucket+"/"+destKey, nil)
-	headRec := httptest.NewRecorder()
-	r.ServeHTTP(headRec, headReq)
-	if headRec.Code != 200 {
-		t.Fatalf("HEAD dest unexpected status: %d", headRec.Code)
-	}
-	if ct := headRec.Header().Get("Content-Type"); ct != "text/plain" {
-		t.Fatalf("HEAD dest Content-Type: %q, want text/plain", ct)
-	}
-	if meta := headRec.Header().Get("x-amz-meta-custom"); meta != "source-value" {
-		t.Fatalf("HEAD dest x-amz-meta-custom: %q, want source-value", meta)
-	}
+			if copyRec.Code != tt.expectedStatus {
+				t.Fatalf("COPY unexpected status: got %d, want %d body=%s", copyRec.Code, tt.expectedStatus, copyRec.Body.String())
+			}
 
-	// Verify source still exists
-	getSourceReq := httptest.NewRequest("GET", "/"+bucket+"/"+sourceKey, nil)
-	getSourceRec := httptest.NewRecorder()
-	r.ServeHTTP(getSourceRec, getSourceReq)
-	if getSourceRec.Code != 200 {
-		t.Fatalf("GET source after copy unexpected status: %d", getSourceRec.Code)
-	}
+			// If copy succeeded, verify result
+			if tt.expectedStatus == 200 {
+				var copyResult model.CopyObjectResult
+				if err := xml.Unmarshal(copyRec.Body.Bytes(), &copyResult); err != nil {
+					t.Fatalf("unmarshal copy result failed: %v\nxml=%s", err, copyRec.Body.String())
+				}
+				if copyResult.ETag == "" {
+					t.Fatalf("copy result missing ETag")
+				}
+				if copyResult.LastModified.IsZero() {
+					t.Fatalf("copy result missing LastModified")
+				}
 
-	t.Logf("Source ETag: %s, Dest ETag: %s", sourceETag, copyResult.ETag)
-}
+				// Verify destination content
+				getReq := httptest.NewRequest("GET", "/"+tt.bucket+"/"+tt.destKey, nil)
+				getRec := httptest.NewRecorder()
+				r.ServeHTTP(getRec, getReq)
+				if getRec.Code != 200 {
+					t.Fatalf("GET dest unexpected status: %d", getRec.Code)
+				}
+				body, _ := io.ReadAll(getRec.Body)
+				if string(body) != tt.data {
+					t.Fatalf("GET dest unexpected body: %q, want %q", string(body), tt.data)
+				}
 
-func TestCopyObject_ReplaceMetadata(t *testing.T) {
-	s := testutil.StartJSServer(t)
-	defer s.Shutdown()
+				// Verify destination metadata
+				if tt.verifyDestMeta {
+					headReq := httptest.NewRequest("HEAD", "/"+tt.bucket+"/"+tt.destKey, nil)
+					headRec := httptest.NewRecorder()
+					r.ServeHTTP(headRec, headReq)
+					if headRec.Code != 200 {
+						t.Fatalf("HEAD dest unexpected status: %d", headRec.Code)
+					}
+					if ct := headRec.Header().Get("Content-Type"); ct != tt.expectedDestCT {
+						t.Fatalf("HEAD dest Content-Type: %q, want %q", ct, tt.expectedDestCT)
+					}
+					for k, v := range tt.expectedDestMeta {
+						if meta := headRec.Header().Get(k); meta != v {
+							t.Fatalf("HEAD dest %s: %q, want %q", k, meta, v)
+						}
+					}
+					// Verify old metadata is not present if REPLACE
+					if tt.metadataDirective == "REPLACE" {
+						for k := range tt.sourceMetadata {
+							if _, exists := tt.expectedDestMeta[k]; !exists {
+								if meta := headRec.Header().Get(k); meta != "" {
+									t.Fatalf("HEAD dest should not have %s, got: %q", k, meta)
+								}
+							}
+						}
+					}
+				}
 
-	logger := logging.NewLogger(logging.Config{Level: "debug"})
-	gw, err := NewS3Gateway(logger, s.ClientURL(), 1, nil, nil)
-	if err != nil {
-		t.Fatalf("failed to create S3 gateway: %v", err)
-	}
-
-	natsEndpoint := s.Addr().String()
-	nc, err := nats.Connect(natsEndpoint)
-	nc.SetClosedHandler(func(_ *nats.Conn) {})
-	defer nc.Close()
-
-	js, err := nc.JetStream()
-	if err != nil {
-		t.Fatalf("JetStream failed: %v", err)
-	}
-	bucket := "copy-replace-test"
-	if _, err := js.CreateObjectStore(&nats.ObjectStoreConfig{Bucket: bucket}); err != nil {
-		t.Fatalf("create object store failed: %v", err)
-	}
-
-	r := mux.NewRouter()
-	gw.RegisterRoutes(r)
-
-	// Upload source with metadata
-	sourceKey := "source.txt"
-	data := "test-data"
-	putReq := httptest.NewRequest("PUT", "/"+bucket+"/"+sourceKey, strings.NewReader(data))
-	putReq.Header.Set("x-amz-meta-original", "old-value")
-	putRec := httptest.NewRecorder()
-	r.ServeHTTP(putRec, putReq)
-	if putRec.Code != 200 {
-		t.Fatalf("PUT source unexpected status: %d", putRec.Code)
-	}
-
-	// Copy with REPLACE directive and new metadata
-	destKey := "dest.txt"
-	copyReq := httptest.NewRequest("PUT", "/"+bucket+"/"+destKey, nil)
-	copyReq.Header.Set("x-amz-copy-source", bucket+"/"+sourceKey)
-	copyReq.Header.Set("x-amz-metadata-directive", "REPLACE")
-	copyReq.Header.Set("x-amz-meta-new", "new-value")
-	copyReq.Header.Set("Content-Type", "application/json")
-	copyRec := httptest.NewRecorder()
-	r.ServeHTTP(copyRec, copyReq)
-	if copyRec.Code != 200 {
-		t.Fatalf("COPY with REPLACE unexpected status: %d body=%s", copyRec.Code, copyRec.Body.String())
-	}
-
-	// Verify destination has new metadata
-	headReq := httptest.NewRequest("HEAD", "/"+bucket+"/"+destKey, nil)
-	headRec := httptest.NewRecorder()
-	r.ServeHTTP(headRec, headReq)
-	if headRec.Code != 200 {
-		t.Fatalf("HEAD dest unexpected status: %d", headRec.Code)
-	}
-	if meta := headRec.Header().Get("x-amz-meta-new"); meta != "new-value" {
-		t.Fatalf("HEAD dest x-amz-meta-new: %q, want new-value", meta)
-	}
-	if meta := headRec.Header().Get("x-amz-meta-original"); meta != "" {
-		t.Fatalf("HEAD dest should not have x-amz-meta-original, got: %q", meta)
-	}
-	if ct := headRec.Header().Get("Content-Type"); ct != "application/json" {
-		t.Fatalf("HEAD dest Content-Type: %q, want application/json", ct)
-	}
-}
-
-func TestCopyObject_InvalidSource(t *testing.T) {
-	s := testutil.StartJSServer(t)
-	defer s.Shutdown()
-
-	logger := logging.NewLogger(logging.Config{Level: "debug"})
-	gw, err := NewS3Gateway(logger, s.ClientURL(), 1, nil, nil)
-	if err != nil {
-		t.Fatalf("failed to create S3 gateway: %v", err)
-	}
-
-	natsEndpoint := s.Addr().String()
-	nc, err := nats.Connect(natsEndpoint)
-	nc.SetClosedHandler(func(_ *nats.Conn) {})
-	defer nc.Close()
-
-	js, err := nc.JetStream()
-	if err != nil {
-		t.Fatalf("JetStream failed: %v", err)
-	}
-	bucket := "copy-error-test"
-	if _, err := js.CreateObjectStore(&nats.ObjectStoreConfig{Bucket: bucket}); err != nil {
-		t.Fatalf("create object store failed: %v", err)
-	}
-
-	r := mux.NewRouter()
-	gw.RegisterRoutes(r)
-
-	// Attempt copy with invalid source format (missing key)
-	copyReq := httptest.NewRequest("PUT", "/"+bucket+"/dest.txt", nil)
-	copyReq.Header.Set("x-amz-copy-source", "just-bucket-name")
-	copyRec := httptest.NewRecorder()
-	r.ServeHTTP(copyRec, copyReq)
-	if copyRec.Code != 400 {
-		t.Fatalf("COPY invalid source expected 400, got: %d", copyRec.Code)
-	}
-
-	// Attempt copy with non-existent source
-	copyReq2 := httptest.NewRequest("PUT", "/"+bucket+"/dest.txt", nil)
-	copyReq2.Header.Set("x-amz-copy-source", bucket+"/non-existent-key")
-	copyRec2 := httptest.NewRecorder()
-	r.ServeHTTP(copyRec2, copyReq2)
-	if copyRec2.Code != 404 {
-		t.Fatalf("COPY non-existent source expected 404, got: %d", copyRec2.Code)
+				// Verify source still exists
+				getSourceReq := httptest.NewRequest("GET", "/"+tt.bucket+"/"+tt.sourceKey, nil)
+				getSourceRec := httptest.NewRecorder()
+				r.ServeHTTP(getSourceRec, getSourceReq)
+				if getSourceRec.Code != 200 {
+					t.Fatalf("GET source after copy unexpected status: %d", getSourceRec.Code)
+				}
+			}
+		})
 	}
 }
 
@@ -388,7 +399,7 @@ func TestListObjects_WithDelimiter(t *testing.T) {
 	}
 
 	// Parse XML response
-	var result ListBucketResult
+	var result model.ListBucketResult
 	body, _ := io.ReadAll(listRec.Body)
 	t.Logf("XML Response: %s", string(body))
 
@@ -651,7 +662,7 @@ func TestListObjects_WithTrailingSlash(t *testing.T) {
 		}
 
 		// Verify it's an XML list response, not object data
-		var result ListBucketResult
+		var result model.ListBucketResult
 		if err := xml.Unmarshal(rec.Body.Bytes(), &result); err != nil {
 			t.Fatalf("Expected XML list response, got error: %v\nBody: %s", err, rec.Body.String())
 		}
@@ -676,7 +687,7 @@ func TestListObjects_WithTrailingSlash(t *testing.T) {
 		}
 
 		// Verify it's an XML list response
-		var result ListBucketResult
+		var result model.ListBucketResult
 		if err := xml.Unmarshal(rec.Body.Bytes(), &result); err != nil {
 			t.Fatalf("Expected XML list response, got error: %v\nBody: %s", err, rec.Body.String())
 		}
@@ -701,7 +712,7 @@ func TestListObjects_WithTrailingSlash(t *testing.T) {
 		}
 
 		// Verify it's an XML list response
-		var result ListBucketResult
+		var result model.ListBucketResult
 		if err := xml.Unmarshal(rec.Body.Bytes(), &result); err != nil {
 			t.Fatalf("Expected XML list response, got error: %v\nBody: %s", err, rec.Body.String())
 		}
@@ -730,7 +741,7 @@ func TestListObjects_WithTrailingSlash(t *testing.T) {
 			t.Fatalf("GET /%s?list-type=2 unexpected status: %d", bucket, rec.Code)
 		}
 
-		var result ListBucketResult
+		var result model.ListBucketResult
 		if err := xml.Unmarshal(rec.Body.Bytes(), &result); err != nil {
 			t.Fatalf("Expected XML list response, got error: %v", err)
 		}
@@ -739,4 +750,274 @@ func TestListObjects_WithTrailingSlash(t *testing.T) {
 			t.Errorf("Expected 3 objects, got %d", len(result.Contents))
 		}
 	})
+}
+
+func TestUploadCancellation(t *testing.T) {
+	tests := []struct {
+		name            string
+		bucket          string
+		key             string
+		totalSize       int64
+		chunkSize       int
+		sleepPerChunk   time.Duration
+		cancelAfter     time.Duration
+		expectedSuccess bool
+	}{
+		{
+			name:            "cancel large upload aborts write",
+			bucket:          "cancel-bucket",
+			key:             "big-file.bin",
+			totalSize:       10 * 1024 * 1024, // 10 MiB
+			chunkSize:       64 * 1024,
+			sleepPerChunk:   5 * time.Millisecond,
+			cancelAfter:     50 * time.Millisecond,
+			expectedSuccess: false,
+		},
+		{
+			name:            "cancel very large upload",
+			bucket:          "cancel-bucket-large",
+			key:             "huge-file.bin",
+			totalSize:       20 * 1024 * 1024, // 20 MiB
+			chunkSize:       64 * 1024,
+			sleepPerChunk:   3 * time.Millisecond,
+			cancelAfter:     30 * time.Millisecond,
+			expectedSuccess: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := testutil.StartJSServer(t)
+			defer s.Shutdown()
+
+			logger := logging.NewLogger(logging.Config{Level: "debug"})
+			gw, err := NewS3Gateway(logger, s.ClientURL(), 1, nil, nil)
+			if err != nil {
+				t.Fatalf("failed to create S3 gateway: %v", err)
+			}
+
+			// Create Object Store bucket
+			nc, err := nats.Connect(s.ClientURL())
+			if err != nil {
+				t.Fatalf("connect failed: %v", err)
+			}
+			nc.SetClosedHandler(func(_ *nats.Conn) {})
+			defer nc.Close()
+			js, err := nc.JetStream()
+			if err != nil {
+				t.Fatalf("JetStream failed: %v", err)
+			}
+			if _, err := js.CreateObjectStore(&nats.ObjectStoreConfig{Bucket: tt.bucket}); err != nil {
+				t.Fatalf("create object store failed: %v", err)
+			}
+
+			r := mux.NewRouter()
+			gw.RegisterRoutes(r)
+
+			// Prepare a slow streaming body using an io.Pipe
+			pr, pw := io.Pipe()
+			chunk := make([]byte, tt.chunkSize)
+			var wrote int64
+			done := make(chan struct{})
+			go func() {
+				defer close(done)
+				defer pw.Close()
+				for wrote < tt.totalSize {
+					n, err := pw.Write(chunk)
+					if err != nil {
+						return
+					}
+					wrote += int64(n)
+					time.Sleep(tt.sleepPerChunk)
+				}
+			}()
+
+			// Build request with cancelable context and explicit Content-Length
+			req := httptest.NewRequest("PUT", "/"+tt.bucket+"/"+tt.key, pr)
+			ctx, cancel := context.WithCancel(req.Context())
+			req = req.WithContext(ctx)
+			req.ContentLength = tt.totalSize
+
+			rec := httptest.NewRecorder()
+
+			// Serve in a goroutine and cancel midway
+			var wg sync.WaitGroup
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				r.ServeHTTP(rec, req)
+			}()
+
+			// Allow some data to be written then cancel and close the body reader
+			time.Sleep(tt.cancelAfter)
+			cancel()
+			_ = pr.CloseWithError(context.Canceled)
+
+			// Wait for handler to finish
+			wg.Wait()
+			<-done // ensure writer exited
+
+			if tt.expectedSuccess {
+				if rec.Code != 200 && rec.Code != 204 {
+					t.Fatalf("expected success, got %d", rec.Code)
+				}
+			} else {
+				if rec.Code == 200 || rec.Code == 204 {
+					t.Fatalf("expected non-success status on canceled upload, got %d", rec.Code)
+				}
+			}
+
+			// Verify object was not created
+			os, err := js.ObjectStore(tt.bucket)
+			if err != nil {
+				t.Fatalf("ObjectStore failed: %v", err)
+			}
+			if _, err := os.GetInfo(tt.key); err == nil {
+				t.Fatalf("object unexpectedly exists after canceled upload")
+			} else if err != nats.ErrObjectNotFound {
+				t.Fatalf("unexpected error when checking object: %v", err)
+			}
+		})
+	}
+}
+
+// writeSigV4Chunk writes one SigV4 chunk frame to w with the given payload size.
+func writeSigV4Chunk(w io.Writer, size int) error {
+	// Chunk header: hex-size + CRLF, then payload bytes, then CRLF
+	if _, err := fmt.Fprintf(w, "%x\r\n", size); err != nil {
+		return err
+	}
+	if size > 0 {
+		buf := make([]byte, size)
+		if _, err := w.Write(buf); err != nil {
+			return err
+		}
+		if _, err := io.WriteString(w, "\r\n"); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func TestStreamUploadCancellation(t *testing.T) {
+	tests := []struct {
+		name            string
+		bucket          string
+		key             string
+		chunkSize       int
+		numChunks       int
+		sleepPerChunk   time.Duration
+		cancelAfter     time.Duration
+		expectedSuccess bool
+	}{
+		{
+			name:            "cancel SigV4 streaming upload aborts write",
+			bucket:          "cancel-sigv4",
+			key:             "big-stream.bin",
+			chunkSize:       32 * 1024,
+			numChunks:       1000,
+			sleepPerChunk:   3 * time.Millisecond,
+			cancelAfter:     30 * time.Millisecond,
+			expectedSuccess: false,
+		},
+		{
+			name:            "cancel SigV4 large streaming upload",
+			bucket:          "cancel-sigv4-large",
+			key:             "huge-stream.bin",
+			chunkSize:       64 * 1024,
+			numChunks:       2000,
+			sleepPerChunk:   2 * time.Millisecond,
+			cancelAfter:     40 * time.Millisecond,
+			expectedSuccess: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := testutil.StartJSServer(t)
+			defer s.Shutdown()
+
+			logger := logging.NewLogger(logging.Config{Level: "debug"})
+			gw, err := NewS3Gateway(logger, s.ClientURL(), 1, nil, nil)
+			if err != nil {
+				t.Fatalf("failed to create S3 gateway: %v", err)
+			}
+
+			// Create Object Store bucket
+			nc, err := nats.Connect(s.ClientURL())
+			if err != nil {
+				t.Fatalf("connect failed: %v", err)
+			}
+			nc.SetClosedHandler(func(_ *nats.Conn) {})
+			defer nc.Close()
+			js, err := nc.JetStream()
+			if err != nil {
+				t.Fatalf("JetStream failed: %v", err)
+			}
+			if _, err := js.CreateObjectStore(&nats.ObjectStoreConfig{Bucket: tt.bucket}); err != nil {
+				t.Fatalf("create object store failed: %v", err)
+			}
+
+			r := mux.NewRouter()
+			gw.RegisterRoutes(r)
+
+			// Prepare a SigV4 chunked body via pipe
+			pr, pw := io.Pipe()
+			go func() {
+				defer pw.Close()
+				// Write a series of chunks slowly
+				for i := 0; i < tt.numChunks; i++ {
+					if err := writeSigV4Chunk(pw, tt.chunkSize); err != nil {
+						return
+					}
+					time.Sleep(tt.sleepPerChunk)
+				}
+				// Final zero-size chunk (not expected to be reached in test)
+				_ = writeSigV4Chunk(pw, 0)
+				io.WriteString(pw, "\r\n")
+			}()
+
+			req := httptest.NewRequest("PUT", "/"+tt.bucket+"/"+tt.key, pr)
+			// Route to streaming handler by setting SigV4 streaming header
+			req.Header.Set("x-amz-content-sha256", streams.SigV4StreamingPayload)
+			ctx, cancel := context.WithCancel(req.Context())
+			req = req.WithContext(ctx)
+
+			rec := httptest.NewRecorder()
+
+			done := make(chan struct{})
+			go func() {
+				defer close(done)
+				r.ServeHTTP(rec, req)
+			}()
+
+			// Cancel soon after starting
+			time.Sleep(tt.cancelAfter)
+			cancel()
+			_ = pr.CloseWithError(context.Canceled)
+
+			<-done
+
+			if tt.expectedSuccess {
+				if rec.Code != 200 && rec.Code != 204 {
+					t.Fatalf("expected success, got %d", rec.Code)
+				}
+			} else {
+				if rec.Code == 200 || rec.Code == 204 {
+					t.Fatalf("expected non-success status on canceled streaming upload, got %d", rec.Code)
+				}
+			}
+
+			// Verify object was not created
+			os, err := js.ObjectStore(tt.bucket)
+			if err != nil {
+				t.Fatalf("ObjectStore failed: %v", err)
+			}
+			if _, err := os.GetInfo(tt.key); err == nil {
+				t.Fatalf("object unexpectedly exists after canceled streaming upload")
+			} else if err != nats.ErrObjectNotFound {
+				t.Fatalf("unexpected error when checking object: %v", err)
+			}
+		})
+	}
 }
