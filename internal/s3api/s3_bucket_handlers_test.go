@@ -13,129 +13,168 @@ import (
 )
 
 func TestListBuckets(t *testing.T) {
-	s := testutil.StartJSServer(t)
-	defer s.Shutdown()
-
-	logger := logging.NewLogger(logging.Config{Level: "debug"})
-	gw, err := NewS3Gateway(logger, s.ClientURL(), 1, nil, nil)
-	if err != nil {
-		t.Fatalf("failed to create S3 gateway: %v", err)
+	tests := []struct {
+		name            string
+		existingBuckets []string
+		expectedStatus  int
+		expectedBuckets []string
+	}{
+		{
+			name:            "list multiple buckets",
+			existingBuckets: []string{"bucket1", "bucket2"},
+			expectedStatus:  200,
+			expectedBuckets: []string{"bucket1", "bucket2"},
+		},
+		{
+			name:            "list no buckets",
+			existingBuckets: []string{},
+			expectedStatus:  200,
+			expectedBuckets: []string{},
+		},
+		{
+			name:            "list single bucket",
+			existingBuckets: []string{"single-bucket"},
+			expectedStatus:  200,
+			expectedBuckets: []string{"single-bucket"},
+		},
 	}
 
-	// Create a couple of buckets so ListBuckets has content.
-	natsEndpoint := s.Addr().String()
-	nc, err := nats.Connect(natsEndpoint)
-	// Avoid production panic handler during test shutdown.
-	nc.SetClosedHandler(func(_ *nats.Conn) {})
-	defer nc.Close()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := testutil.StartJSServer(t)
+			defer s.Shutdown()
 
-	js, err := nc.JetStream()
-	if err != nil {
-		t.Fatalf("JetStream failed: %v", err)
-	}
-	for _, b := range []string{"bucket1", "bucket2"} {
-		if _, err := js.CreateObjectStore(&nats.ObjectStoreConfig{Bucket: b}); err != nil {
-			t.Fatalf("create object store %s failed: %v", b, err)
-		}
-	}
+			logger := logging.NewLogger(logging.Config{Level: "debug"})
+			gw, err := NewS3Gateway(logger, s.ClientURL(), 1, nil, nil)
+			if err != nil {
+				t.Fatalf("failed to create S3 gateway: %v", err)
+			}
 
-	r := mux.NewRouter()
-	gw.RegisterRoutes(r)
+			natsEndpoint := s.Addr().String()
+			nc, err := nats.Connect(natsEndpoint)
+			nc.SetClosedHandler(func(_ *nats.Conn) {})
+			defer nc.Close()
 
-	req := httptest.NewRequest("GET", "/", nil)
-	rr := httptest.NewRecorder()
-	r.ServeHTTP(rr, req)
+			js, err := nc.JetStream()
+			if err != nil {
+				t.Fatalf("JetStream failed: %v", err)
+			}
+			for _, b := range tt.existingBuckets {
+				if _, err := js.CreateObjectStore(&nats.ObjectStoreConfig{Bucket: b}); err != nil {
+					t.Fatalf("create object store %s failed: %v", b, err)
+				}
+			}
 
-	if rr.Code != 200 {
-		t.Fatalf("unexpected status: got %d body=%s", rr.Code, rr.Body.String())
-	}
+			r := mux.NewRouter()
+			gw.RegisterRoutes(r)
 
-	// Minimal struct to pull out bucket names from the XML
-	var parsed struct {
-		Names []string `xml:"Buckets>Bucket>Name"`
-	}
-	if err := xml.Unmarshal(rr.Body.Bytes(), &parsed); err != nil {
-		t.Fatalf("unmarshal xml failed: %v\nxml=%s", err, rr.Body.String())
-	}
+			req := httptest.NewRequest("GET", "/", nil)
+			rr := httptest.NewRecorder()
+			r.ServeHTTP(rr, req)
 
-	want := map[string]bool{"bucket1": false, "bucket2": false}
-	for _, n := range parsed.Names {
-		if _, ok := want[n]; ok {
-			want[n] = true
-		}
-	}
-	for name, found := range want {
-		if !found {
-			t.Fatalf("expected bucket %q in response", name)
-		}
+			if rr.Code != tt.expectedStatus {
+				t.Fatalf("unexpected status: got %d, want %d body=%s", rr.Code, tt.expectedStatus, rr.Body.String())
+			}
+
+			var parsed struct {
+				Names []string `xml:"Buckets>Bucket>Name"`
+			}
+			if err := xml.Unmarshal(rr.Body.Bytes(), &parsed); err != nil {
+				t.Fatalf("unmarshal xml failed: %v\nxml=%s", err, rr.Body.String())
+			}
+
+			want := make(map[string]bool)
+			for _, b := range tt.expectedBuckets {
+				want[b] = false
+			}
+			for _, n := range parsed.Names {
+				if _, ok := want[n]; ok {
+					want[n] = true
+				}
+			}
+			for name, found := range want {
+				if !found {
+					t.Fatalf("expected bucket %q in response", name)
+				}
+			}
+		})
 	}
 }
 
 func TestCreateBucket(t *testing.T) {
-	s := testutil.StartJSServer(t)
-	defer s.Shutdown()
-
-	logger := logging.NewLogger(logging.Config{Level: "debug"})
-	gw, err := NewS3Gateway(logger, s.ClientURL(), 1, nil, nil)
-	if err != nil {
-		t.Fatalf("failed to create S3 gateway: %v", err)
+	tests := []struct {
+		name           string
+		bucketName     string
+		prexisting     bool
+		expectedStatus int
+		shouldExist    bool
+	}{
+		{
+			name:           "create new bucket",
+			bucketName:     "created-bucket",
+			prexisting:     false,
+			expectedStatus: 200,
+			shouldExist:    true,
+		},
+		{
+			name:           "create duplicate bucket fails",
+			bucketName:     "dup-bucket",
+			prexisting:     true,
+			expectedStatus: 409,
+			shouldExist:    true,
+		},
+		{
+			name:           "create bucket with valid name",
+			bucketName:     "valid-bucket-name",
+			prexisting:     false,
+			expectedStatus: 200,
+			shouldExist:    true,
+		},
 	}
 
-	r := mux.NewRouter()
-	gw.RegisterRoutes(r)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := testutil.StartJSServer(t)
+			defer s.Shutdown()
 
-	bucket := "created-bucket"
-	req := httptest.NewRequest("PUT", "/"+bucket, nil)
-	rr := httptest.NewRecorder()
-	r.ServeHTTP(rr, req)
+			logger := logging.NewLogger(logging.Config{Level: "debug"})
+			gw, err := NewS3Gateway(logger, s.ClientURL(), 1, nil, nil)
+			if err != nil {
+				t.Fatalf("failed to create S3 gateway: %v", err)
+			}
 
-	if rr.Code != 200 {
-		t.Fatalf("unexpected status: got %d body=%s", rr.Code, rr.Body.String())
-	}
+			natsEndpoint := s.Addr().String()
+			nc, err := nats.Connect(natsEndpoint)
+			nc.SetClosedHandler(func(_ *nats.Conn) {})
+			defer nc.Close()
+			js, err := nc.JetStream()
+			if err != nil {
+				t.Fatalf("JetStream failed: %v", err)
+			}
 
-	// Verify bucket exists in NATS by opening ObjectStore
-	natsEndpoint := s.Addr().String()
-	nc, err := nats.Connect(natsEndpoint)
-	nc.SetClosedHandler(func(_ *nats.Conn) {})
-	defer nc.Close()
-	js, err := nc.JetStream()
-	if err != nil {
-		t.Fatalf("JetStream failed: %v", err)
-	}
-	if _, err := js.ObjectStore(bucket); err != nil {
-		t.Fatalf("expected created object store %q, got error: %v", bucket, err)
-	}
-}
+			if tt.prexisting {
+				if _, err := js.CreateObjectStore(&nats.ObjectStoreConfig{Bucket: tt.bucketName}); err != nil {
+					t.Fatalf("create preexisting object store %s failed: %v", tt.bucketName, err)
+				}
+			}
 
-func TestCreateBucketDuplicateFails(t *testing.T) {
-	s := testutil.StartJSServer(t)
-	defer s.Shutdown()
+			r := mux.NewRouter()
+			gw.RegisterRoutes(r)
 
-	logger := logging.NewLogger(logging.Config{Level: "debug"})
-	gw, err := NewS3Gateway(logger, s.ClientURL(), 1, nil, nil)
-	if err != nil {
-		t.Fatalf("failed to create S3 gateway: %v", err)
-	}
+			req := httptest.NewRequest("PUT", "/"+tt.bucketName, nil)
+			rr := httptest.NewRecorder()
+			r.ServeHTTP(rr, req)
 
-	r := mux.NewRouter()
-	gw.RegisterRoutes(r)
+			if rr.Code != tt.expectedStatus {
+				t.Fatalf("unexpected status: got %d, want %d body=%s", rr.Code, tt.expectedStatus, rr.Body.String())
+			}
 
-	bucket := "dup-bucket"
-
-	// First create should succeed
-	req1 := httptest.NewRequest("PUT", "/"+bucket, nil)
-	rr1 := httptest.NewRecorder()
-	r.ServeHTTP(rr1, req1)
-	if rr1.Code != 200 {
-		t.Fatalf("unexpected status on first create: got %d body=%s", rr1.Code, rr1.Body.String())
-	}
-
-	// Second create should fail with conflict
-	req2 := httptest.NewRequest("PUT", "/"+bucket, nil)
-	rr2 := httptest.NewRecorder()
-	r.ServeHTTP(rr2, req2)
-	if rr2.Code != 409 {
-		t.Fatalf("expected 409 on duplicate create, got %d body=%s", rr2.Code, rr2.Body.String())
+			if tt.shouldExist {
+				if _, err := js.ObjectStore(tt.bucketName); err != nil {
+					t.Fatalf("expected created object store %q, got error: %v", tt.bucketName, err)
+				}
+			}
+		})
 	}
 }
 

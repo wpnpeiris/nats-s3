@@ -24,6 +24,80 @@ const (
 	MimeXML  mimeType = "application/xml"
 )
 
+// PrefixEntry represents a common prefix in S3 list results.
+type PrefixEntry struct {
+	Prefix string `xml:"Prefix"`
+}
+
+// BucketsResult is the XML envelope for ListBuckets responses.
+type BucketsResult struct {
+	XMLName xml.Name `xml:"http://s3.amazonaws.com/doc/2006-03-01/ ListAllMyBucketsResult"`
+	Owner   *s3.Owner
+	Buckets []*s3.Bucket `xml:"Buckets>Bucket"`
+}
+
+// LocationConstraintResponse is the XML response for GetBucketLocation.
+type LocationConstraintResponse struct {
+	XMLName  xml.Name `xml:"http://s3.amazonaws.com/doc/2006-03-01/ LocationConstraint"`
+	Location string   `xml:",chardata"`
+}
+
+// ListBucketResult is a minimal representation of S3's ListBucket result.
+type ListBucketResult struct {
+	IsTruncated    bool          `xml:"IsTruncated"`
+	Contents       []s3.Object   `xml:"Contents"`
+	Name           string        `xml:"Name"`
+	Prefix         string        `xml:"Prefix"`
+	Delimiter      string        `xml:"Delimiter,omitempty"`
+	MaxKeys        int           `xml:"MaxKeys"`
+	CommonPrefixes []PrefixEntry `xml:"CommonPrefixes,omitempty"`
+}
+
+// CopyObjectResult is a compact response shape used by some S3 clients
+// to acknowledge a successful object write/copy with an ETag.
+type CopyObjectResult struct {
+	ETag           string    `xml:"ETag"`
+	LastModified   time.Time `xml:"LastModified"`
+	ChecksumCRC32  string    `xml:"ChecksumCRC32"`
+	ChecksumCRC32C string    `xml:"ChecksumCRC32C"`
+	ChecksumSHA1   string    `xml:"ChecksumSHA1"`
+	ChecksumSHA256 string    `xml:"ChecksumSHA256"`
+}
+
+// DeleteRequest represents the S3 DeleteObjects request structure.
+type DeleteRequest struct {
+	XMLName xml.Name         `xml:"Delete"`
+	Objects []ObjectToDelete `xml:"Object"`
+	Quiet   bool             `xml:"Quiet"`
+}
+
+// DeleteResult represents the S3 DeleteObjects response structure.
+type DeleteResult struct {
+	XMLName xml.Name        `xml:"http://s3.amazonaws.com/doc/2006-03-01/ DeleteResult"`
+	Deleted []DeletedObject `xml:"Deleted,omitempty"`
+	Error   []DeleteError   `xml:"Error,omitempty"`
+}
+
+// DeleteError represents an error during object deletion.
+type DeleteError struct {
+	Key       string `xml:"Key"`
+	Code      string `xml:"Code"`
+	Message   string `xml:"Message"`
+	VersionId string `xml:"VersionId,omitempty"`
+}
+
+// ObjectToDelete represents an object to be deleted.
+type ObjectToDelete struct {
+	Key       string `xml:"Key"`
+	VersionId string `xml:"VersionId,omitempty"`
+}
+
+// DeletedObject represents a successfully deleted object.
+type DeletedObject struct {
+	Key       string `xml:"Key"`
+	VersionId string `xml:"VersionId,omitempty"`
+}
+
 // RESTErrorResponse - error response format
 type RESTErrorResponse struct {
 	XMLName    xml.Name `xml:"Error" json:"-"`

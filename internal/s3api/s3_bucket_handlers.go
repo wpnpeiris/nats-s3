@@ -2,7 +2,6 @@ package s3api
 
 import (
 	"context"
-	"encoding/xml"
 	"errors"
 	"net/http"
 	"time"
@@ -13,19 +12,6 @@ import (
 	"github.com/wpnpeiris/nats-s3/internal/client"
 	"github.com/wpnpeiris/nats-s3/internal/model"
 )
-
-// BucketsResult is the XML envelope for ListBuckets responses.
-type BucketsResult struct {
-	XMLName xml.Name `xml:"http://s3.amazonaws.com/doc/2006-03-01/ ListAllMyBucketsResult"`
-	Owner   *s3.Owner
-	Buckets []*s3.Bucket `xml:"Buckets>Bucket"`
-}
-
-// LocationConstraintResponse is the XML response for GetBucketLocation.
-type LocationConstraintResponse struct {
-	XMLName  xml.Name `xml:"http://s3.amazonaws.com/doc/2006-03-01/ LocationConstraint"`
-	Location string   `xml:",chardata"`
-}
 
 // CreateBucket handles S3 CreateBucket by creating a JetStream Object Store
 // bucket and returning a minimal S3-compatible XML response.
@@ -46,7 +32,7 @@ func (s *S3Gateway) CreateBucket(w http.ResponseWriter, r *http.Request) {
 		CreationDate: aws.Time(time.Now()),
 	}}
 
-	response := BucketsResult{
+	response := model.BucketsResult{
 		Buckets: buckets,
 	}
 
@@ -109,7 +95,7 @@ func (s *S3Gateway) ListBuckets(w http.ResponseWriter, r *http.Request) {
 		)
 	}
 
-	response := BucketsResult{
+	response := model.BucketsResult{
 		Buckets: buckets,
 	}
 
@@ -149,7 +135,7 @@ func (s *S3Gateway) GetBucketLocation(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Return empty location constraint for default location
-	response := LocationConstraintResponse{
+	response := model.LocationConstraintResponse{
 		Location: "",
 	}
 

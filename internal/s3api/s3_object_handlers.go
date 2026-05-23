@@ -22,67 +22,6 @@ import (
 	"github.com/wpnpeiris/nats-s3/internal/streams"
 )
 
-// PrefixEntry represents a common prefix in S3 list results.
-type PrefixEntry struct {
-	Prefix string `xml:"Prefix"`
-}
-
-// ListBucketResult is a minimal representation of S3's ListBucket result.
-type ListBucketResult struct {
-	IsTruncated    bool          `xml:"IsTruncated"`
-	Contents       []s3.Object   `xml:"Contents"`
-	Name           string        `xml:"Name"`
-	Prefix         string        `xml:"Prefix"`
-	Delimiter      string        `xml:"Delimiter,omitempty"`
-	MaxKeys        int           `xml:"MaxKeys"`
-	CommonPrefixes []PrefixEntry `xml:"CommonPrefixes,omitempty"`
-}
-
-// CopyObjectResult is a compact response shape used by some S3 clients
-// to acknowledge a successful object write/copy with an ETag.
-type CopyObjectResult struct {
-	ETag           string    `xml:"ETag"`
-	LastModified   time.Time `xml:"LastModified"`
-	ChecksumCRC32  string    `xml:"ChecksumCRC32"`
-	ChecksumCRC32C string    `xml:"ChecksumCRC32C"`
-	ChecksumSHA1   string    `xml:"ChecksumSHA1"`
-	ChecksumSHA256 string    `xml:"ChecksumSHA256"`
-}
-
-// DeleteRequest represents the S3 DeleteObjects request structure.
-type DeleteRequest struct {
-	XMLName xml.Name         `xml:"Delete"`
-	Objects []ObjectToDelete `xml:"Object"`
-	Quiet   bool             `xml:"Quiet"`
-}
-
-// DeleteResult represents the S3 DeleteObjects response structure.
-type DeleteResult struct {
-	XMLName xml.Name        `xml:"http://s3.amazonaws.com/doc/2006-03-01/ DeleteResult"`
-	Deleted []DeletedObject `xml:"Deleted,omitempty"`
-	Error   []DeleteError   `xml:"Error,omitempty"`
-}
-
-// DeleteError represents an error during object deletion.
-type DeleteError struct {
-	Key       string `xml:"Key"`
-	Code      string `xml:"Code"`
-	Message   string `xml:"Message"`
-	VersionId string `xml:"VersionId,omitempty"`
-}
-
-// ObjectToDelete represents an object to be deleted.
-type ObjectToDelete struct {
-	Key       string `xml:"Key"`
-	VersionId string `xml:"VersionId,omitempty"`
-}
-
-// DeletedObject represents a successfully deleted object.
-type DeletedObject struct {
-	Key       string `xml:"Key"`
-	VersionId string `xml:"VersionId,omitempty"`
-}
-
 // CopyObject performs a server-side copy of an object from source to destination.
 func (s *S3Gateway) CopyObject(w http.ResponseWriter, r *http.Request) {
 	destBucket := mux.Vars(r)["bucket"]
@@ -113,7 +52,7 @@ func (s *S3Gateway) CopyObject(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Return CopyObjectResult XML response
-	result := CopyObjectResult{
+	result := model.CopyObjectResult{
 		ETag:         formatETag(destInfo.Digest),
 		LastModified: destInfo.ModTime,
 	}
@@ -139,15 +78,15 @@ func (s *S3Gateway) DeleteObjects(w http.ResponseWriter, r *http.Request) {
 	bucket := mux.Vars(r)["bucket"]
 
 	// Parse request body
-	var deleteReq DeleteRequest
+	var deleteReq model.DeleteRequest
 	if err := xml.NewDecoder(r.Body).Decode(&deleteReq); err != nil {
 		model.WriteErrorResponse(w, r, model.ErrMalformedXML)
 		return
 	}
 
 	// Process each object deletion
-	var deleted []DeletedObject
-	var deleteErrors []DeleteError
+	var deleted []model.DeletedObject
+	var deleteErrors []model.DeleteError
 
 	for _, obj := range deleteReq.Objects {
 		err := s.client.DeleteObject(r.Context(), bucket, obj.Key)
@@ -161,23 +100,23 @@ func (s *S3Gateway) DeleteObjects(w http.ResponseWriter, r *http.Request) {
 				message = "The specified bucket does not exist"
 			} else if errors.Is(err, client.ErrObjectNotFound) {
 				// S3 considers deleting non-existent object as success
-				deleted = append(deleted, DeletedObject{Key: obj.Key})
+				deleted = append(deleted, model.DeletedObject{Key: obj.Key})
 				continue
 			}
 
-			deleteErrors = append(deleteErrors, DeleteError{
+			deleteErrors = append(deleteErrors, model.DeleteError{
 				Key:     obj.Key,
 				Code:    code,
 				Message: message,
 			})
 		} else {
 			// Successfully deleted
-			deleted = append(deleted, DeletedObject{Key: obj.Key})
+			deleted = append(deleted, model.DeletedObject{Key: obj.Key})
 		}
 	}
 
 	// Build response
-	result := DeleteResult{
+	result := model.DeleteResult{
 		Deleted: deleted,
 		Error:   deleteErrors,
 	}
@@ -382,14 +321,14 @@ func (s *S3Gateway) ListObjects(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if errors.Is(err, client.ErrObjectNotFound) {
-			xmlResponse := ListBucketResult{
+			xmlResponse := model.ListBucketResult{
 				IsTruncated:    false,
 				Contents:       []s3.Object{},
 				Name:           bucket,
 				Prefix:         prefix,
 				Delimiter:      delimiter,
 				MaxKeys:        1000,
-				CommonPrefixes: []PrefixEntry{},
+				CommonPrefixes: []model.PrefixEntry{},
 			}
 
 			model.WriteXMLResponse(w, r, http.StatusOK, xmlResponse)
@@ -401,7 +340,7 @@ func (s *S3Gateway) ListObjects(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var contents []s3.Object
-	var commonPrefixes []PrefixEntry
+	var commonPrefixes []model.PrefixEntry
 
 	if delimiter != "" {
 		// Group objects by common prefix when delimiter is specified
@@ -411,7 +350,7 @@ func (s *S3Gateway) ListObjects(w http.ResponseWriter, r *http.Request) {
 		contents = objectsToContents(res, prefix)
 	}
 
-	xmlResponse := ListBucketResult{
+	xmlResponse := model.ListBucketResult{
 		IsTruncated:    false,
 		Contents:       contents,
 		Name:           bucket,
@@ -684,7 +623,7 @@ func formatETag(digest string) string {
 }
 
 // groupObjectsByDelimiter groups objects by common prefix when a delimiter is specified.
-func groupObjectsByDelimiter(objects []*jetstream.ObjectInfo, prefix, delimiter string) ([]s3.Object, []PrefixEntry) {
+func groupObjectsByDelimiter(objects []*jetstream.ObjectInfo, prefix, delimiter string) ([]s3.Object, []model.PrefixEntry) {
 	var contents []s3.Object
 	prefixMap := make(map[string]bool) // Track unique prefixes
 
@@ -726,9 +665,9 @@ func groupObjectsByDelimiter(objects []*jetstream.ObjectInfo, prefix, delimiter 
 	}
 
 	// Convert prefix map to sorted slice
-	var commonPrefixes []PrefixEntry
+	var commonPrefixes []model.PrefixEntry
 	for p := range prefixMap {
-		commonPrefixes = append(commonPrefixes, PrefixEntry{Prefix: p})
+		commonPrefixes = append(commonPrefixes, model.PrefixEntry{Prefix: p})
 	}
 
 	return contents, commonPrefixes
