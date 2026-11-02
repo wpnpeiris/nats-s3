@@ -1,0 +1,30 @@
+replicaCount: 1
+
+image:
+  repository: ghcr.io/wpnpeiris/nats-s3
+  tag: "latest"
+  pullPolicy: IfNotPresent
+
+nameOverride: ""
+fullnameOverride: ""
+
+service:
+  type: ClusterIP
+  port: 5222
+
+nats:
+  servers: "nats://nats:4222"
+  # Optional NATS username/password authentication.
+  username: ""
+  password: ""
+  # Optional NATS JWT credentials file provided by an existing Secret.
+  # The Secret must contain a key named nats.creds.
+  existingCredentialsSecret: ""
+
+s3:
+  # Existing Secret containing credentials.json. Takes precedence over inline credentials.
+  existingCredentialsSecret: ""
+  accessKey: ""
+  secretKey: ""
+
+resources: {}

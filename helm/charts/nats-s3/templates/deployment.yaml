@@ -1,0 +1,71 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "nats-s3.fullname" . }}
+  labels:
+    {{- include "nats-s3.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "nats-s3.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "nats-s3.selectorLabels" . | nindent 8 }}
+    spec:
+      containers:
+        - name: nats-s3
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - --listen
+            - 0.0.0.0:5222
+            - --natsServers
+            - {{ .Values.nats.servers | quote }}
+            - --s3.credentials
+            - /etc/nats-s3/credentials.json
+            {{- if .Values.nats.username }}
+            - --natsUser
+            - {{ .Values.nats.username | quote }}
+            {{- end }}
+            {{- if .Values.nats.password }}
+            - --natsPassword
+            - {{ .Values.nats.password | quote }}
+            {{- end }}
+            {{- if .Values.nats.existingCredentialsSecret }}
+            - --natsCredsFile
+            - /etc/nats-s3/nats-auth/nats.creds
+            {{- end }}
+          ports:
+            - name: http
+              containerPort: 5222
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          volumeMounts:
+            - name: s3-credentials
+              mountPath: /etc/nats-s3
+              readOnly: true
+            {{- if .Values.nats.existingCredentialsSecret }}
+            - name: nats-credentials
+              mountPath: /etc/nats-s3/nats-auth
+              readOnly: true
+            {{- end }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: s3-credentials
+          secret:
+            secretName: {{ .Values.s3.existingCredentialsSecret | default (printf "%s-s3-credentials" (include "nats-s3.fullname" .)) }}
+        {{- if .Values.nats.existingCredentialsSecret }}
+        - name: nats-credentials
+          secret:
+            secretName: {{ .Values.nats.existingCredentialsSecret }}
+        {{- end }}
