@@ -81,6 +81,7 @@ jobs:
           AWS_ACCESS_KEY_ID: ci-access
           AWS_SECRET_ACCESS_KEY: ci-secret
           AWS_DEFAULT_REGION: us-east-1
+          AWS_REQUEST_CHECKSUM_CALCULATION: when_required
         run: |
           bash scripts/ci-conformance.sh
 
@@ -89,6 +90,7 @@ jobs:
           AWS_ACCESS_KEY_ID: ci-access
           AWS_SECRET_ACCESS_KEY: ci-secret
           AWS_DEFAULT_REGION: us-east-1
+          AWS_REQUEST_CHECKSUM_CALCULATION: when_required
         run: |
           bash scripts/ci-conformance-full.sh
 
