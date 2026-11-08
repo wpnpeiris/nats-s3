@@ -10,49 +10,36 @@
 
 > **S3-compatible object storage powered by NATS JetStream** - Lightweight, fast, and cloud-native.
 
-## About NATS
-
-NATS is a high‑performance distributed messaging system with pub/sub at its core and a
-built‑in persistence layer (JetStream) enabling Streaming, Key‑Value, and Object Store.
-It includes authentication/authorization, multi‑tenancy, and rich deployment topologies.
-
-```
-  +-----------------------+          +-----------------------+
-  |       Clients         |          |        Clients        |
-  |  (Publish / Subscribe)|          |    (Apps/Services)    |
-  +-----------+-----------+          +-----------+-----------+
-              |                                   |
-              v                                   v
-        +-----+-----------------------------------+-----+
-        |               NATS Cluster                    |
-        |  +-----------+  +-----------+  +-----------+  |
-        |  |  Server   |  |  Server   |  |  Server   |  |
-        |  +-----------+  +-----------+  +-----------+  |
-        +------------------------------------------------+
-```
-
 ## NATS‑S3
 Modern object stores like [MinIO](https://github.com/minio/minio),
 [SeaweedFS](https://github.com/seaweedfs/seaweedfs), [JuiceFS](https://github.com/juicedata/juicefs),
 and [AIStore](https://github.com/NVIDIA/aistore) expose S3‑compatible HTTP APIs for simple integration.
 NATS‑S3 follows this approach to provide S3 access to NATS JetStream Object Store.
 
-```
-NATS-S3 Gateway
+![NATS-S3 Overview](docs/images/overview.png)
 
-  +-------------------+      HTTP (S3 API)      +--------------------+
-  |  S3 Clients       +------------------------->+    nats-s3         |
-  |  (AWS CLI/SDKs)   |                         |  HTTP Gateway      |
-  +-------------------+                         +----------+---------+
-                                                           |
-                                                           |
-                                                +--------------------+
-                                                |   NATS Cluster     |
-                                                |  JetStream Object  |
-                                                |      Store         |
-                                                +--------------------+
-```
+## Features
+NATS-S3 brings S3 API compatibility to NATS JetStream Object Store, enabling existing S3-compatible applications, tools, and SDKs to seamlessly interact with NATS-backed object storage.
 
+- **S3-Compatible API Gateway** — Exposes NATS JetStream Object Store through an S3-compatible HTTP API, allowing existing S3 clients and applications to connect without NATS-specific integrations.
+
+- **S3 Ecosystem Integration** — Works with standard S3 clients and tools such as AWS CLI, AWS S3 SDKs, and S3-compatible tools like Rclone, using a configurable S3 endpoint.
+
+- **Bucket & Object Operations** — Supports essential S3 operations, including creating, listing, and deleting buckets, as well as uploading, downloading, copying, listing, and deleting objects.
+
+- **Multipart Uploads** — Supports multipart upload operations for handling large objects, including initiating uploads, uploading individual parts, listing parts, completing uploads, and aborting uploads.
+
+- **AWS Signature V4 Authentication** — Secures S3 API requests using AWS Signature Version 4 (SigV4), supporting multiple users through configurable access and secret key credentials.
+
+- **Presigned URLs** — Supports time-limited, pre-authenticated URLs for accessing objects without directly sharing credentials.
+
+- **S3 Object Metadata & Range Requests** — Supports object metadata, custom HTTP headers, partial object downloads using HTTP range requests, and prefix-based object listing.
+
+- **Powered by NATS JetStream** — Uses NATS JetStream Object Store as the underlying storage backend, leveraging its existing persistence and replication capabilities.
+
+- **Cloud-Native & Lightweight** — Built in Go, with Docker containerization, Kubernetes deployment via Helm charts, and configurable NATS connectivity for seamless integration into cloud-native environments.
+
+- **Monitoring & Observability** — Provides health checks, Prometheus-compatible metrics, and runtime statistics for monitoring gateway operations.
 
 ## Quick Start
 Follow these steps to spin up NATS-S3, integrated with NATS server, and use AWS CLI to work with a bucket and objects.
