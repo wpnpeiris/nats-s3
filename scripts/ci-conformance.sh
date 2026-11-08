@@ -60,14 +60,38 @@ else
 fi
 
 # 6) Get object and compare content
-if aws s3 cp "s3://$BUCKET/hello.txt" "$TMPDIR/out.txt" --endpoint-url="$ENDPOINT" >/dev/null; then
-  if diff -q "$TMPDIR/file.txt" "$TMPDIR/out.txt" >/dev/null; then
+if aws s3 cp "s3://$BUCKET/hello.txt" \
+  "$TMPDIR/out.txt" \
+  --endpoint-url="$ENDPOINT"; then
+
+  if cmp -s "$TMPDIR/file.txt" "$TMPDIR/out.txt"; then
     pass "aws s3 cp get + content match"
   else
-    fail "content mismatch after get"; exit 1
+    echo "ERROR: Downloaded content differs from uploaded content"
+
+    echo "=== Original file ==="
+    wc -c "$TMPDIR/file.txt"
+    od -An -tx1 -c "$TMPDIR/file.txt"
+
+    echo "=== Downloaded file ==="
+    wc -c "$TMPDIR/out.txt"
+    od -An -tx1 -c "$TMPDIR/out.txt"
+
+    echo "=== File differences ==="
+    cmp -l "$TMPDIR/file.txt" "$TMPDIR/out.txt" || true
+
+    echo "=== S3 object metadata ==="
+    aws s3api head-object \
+      --bucket "$BUCKET" \
+      --key "hello.txt" \
+      --endpoint-url="$ENDPOINT" || true
+
+    fail "content mismatch after get"
+    exit 1
   fi
 else
-  fail "aws s3 cp get"; exit 1
+  fail "aws s3 cp get"
+  exit 1
 fi
 
 # 7) Delete object
