@@ -87,6 +87,8 @@ export AWS_ACCESS_KEY_ID=my-access-key
 export AWS_SECRET_ACCESS_KEY=my-secret-key
 # SigV4 scope requires a region; us-east-1 is common
 export AWS_DEFAULT_REGION=us-east-1
+# AWS CLI v2.23.0+ enables S3 checksums by default; avoid optional trailers that may use aws-chunked.
+export AWS_REQUEST_CHECKSUM_CALCULATION=when_required
 ```
 
 7) Create a bucket
@@ -210,6 +212,8 @@ Test with AWS CLI
 export AWS_ACCESS_KEY_ID=my-access-key
 export AWS_SECRET_ACCESS_KEY=my-secret-key
 export AWS_DEFAULT_REGION=us-east-1
+# AWS CLI v2.23.0+ enables S3 checksums by default; avoid optional trailers that may use aws-chunked.
+export AWS_REQUEST_CHECKSUM_CALCULATION=when_required
 
 aws s3 ls --endpoint-url=http://localhost:5222
 ```
@@ -243,6 +247,8 @@ Test with AWS CLI
 export AWS_ACCESS_KEY_ID=my-access-key
 export AWS_SECRET_ACCESS_KEY=my-secret-key
 export AWS_DEFAULT_REGION=us-east-1
+# AWS CLI v2.23.0+ enables S3 checksums by default; avoid optional trailers that may use aws-chunked.
+export AWS_REQUEST_CHECKSUM_CALCULATION=when_required
 
 aws s3 ls --endpoint-url=http://localhost:5222
 ```
@@ -292,6 +298,8 @@ See `credentials.example.json` for a complete example.
 export AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE
 export AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
 export AWS_DEFAULT_REGION=us-east-1
+# AWS CLI v2.23.0+ enables S3 checksums by default; avoid optional trailers that may use aws-chunked.
+export AWS_REQUEST_CHECKSUM_CALCULATION=when_required
 
 aws s3 ls --endpoint-url=http://localhost:5222
 ```
